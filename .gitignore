@@ -28,3 +28,9 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+.env
+node_modules/
+.next/
+dist/
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal

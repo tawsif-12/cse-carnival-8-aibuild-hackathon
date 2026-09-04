@@ -1,0 +1,19 @@
+{
+  "name": "campus-os",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev -w @campus-os/web\" \"npm run dev -w @campus-os/api\"",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:generate": "npm run db:generate -w @campus-os/api",
+    "db:migrate": "npm run db:migrate -w @campus-os/api",
+    "db:seed": "npm run db:seed -w @campus-os/api",
+    "setup": "npm run db:generate && npm run db:migrate && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Schedule {
+  id         String @id
+  course     String
+  title      String
+  day        String
+  start_time String
+  end_time   String
+  room       String
+  instructor String
+  section    String
+
+  @@index([day, start_time])
+  @@index([course])
+}
+
+model Room {
+  id          String    @id
+  room_number String    @unique
+  type        String
+  capacity    Int
+  equipment   String    // JSON-encoded string[]; SQLite has no array column type.
+  floor       Int
+  status      String
+  bookings    Booking[]
+
+  @@index([status, capacity])
+}
+
+model Booking {
+  booking_id String @id
+  booked_by  String
+  date       String
+  start_time String
+  end_time   String
+  purpose    String
+  room_id    String
+  room       Room   @relation(fields: [room_id], references: [id], onDelete: Cascade)
+
+  @@index([room_id, date, start_time, end_time])
+}
+
+model Event {
+  id            String         @id
+  name          String
+  description   String
+  date          String
+  start_time    String
+  end_time      String
+  end_date      String
+  venue         String
+  organizer     String
+  capacity      Int
+  registered    Int
+  status        String
+  registrations Registration[]
+
+  @@index([date, start_time])
+  @@index([status])
+}
+
+model Registration {
+  id         Int    @id @default(autoincrement())
+  student_id String
+  name       String
+  event_id   String
+  event      Event  @relation(fields: [event_id], references: [id], onDelete: Cascade)
+
+  @@unique([event_id, student_id])
+}
+
+model Announcement {
+  id        String @id
+  title     String
+  body      String
+  date      String
+  priority  String
+  posted_by String
+  expires   String
+
+  @@index([date])
+  @@index([priority])
+}
+
+model Assignment {
+  id                  String @id
+  course              String
+  course_title        String
+  title               String
+  description         String
+  assigned_date       String
+  deadline            String
+  submission_platform String
+  status              String
+  marks               Float
+
+  @@index([deadline])
+  @@index([course, status])
+}
