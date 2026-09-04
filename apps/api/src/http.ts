@@ -15,6 +15,8 @@ export function errorHandler(error: unknown, _request: Request, response: Respon
   if (error instanceof HttpError) return response.status(error.status).json({ error: error.message });
   if (typeof error === "object" && error && "status" in error && error.status === 400) return response.status(400).json({ error: "Malformed JSON body" });
   if (typeof error === "object" && error && "code" in error && error.code === "P2002") return response.status(409).json({ error: "A record with that unique value already exists" });
+  if (typeof error === "object" && error && "code" in error && error.code === "P2025") return response.status(404).json({ error: "Record not found" });
+  if (typeof error === "object" && error && "code" in error && error.code === "P2003") return response.status(409).json({ error: "This record is still referenced by related data" });
   console.error(error);
   return response.status(500).json({ error: "Internal server error" });
 }

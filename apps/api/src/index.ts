@@ -1,12 +1,14 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
-import { errorHandler } from "./http";
+import { db } from "./db";
+import { asyncRoute, errorHandler } from "./http";
 import { announcements } from "./routes/announcements";
 import { assignments } from "./routes/assignments";
 import { events } from "./routes/events";
 import { rooms } from "./routes/rooms";
 import { schedules } from "./routes/schedules";
+import { overview } from "./routes/overview";
 import { agent } from "./agent";
 
 const app = express();
@@ -19,8 +21,12 @@ app.use(cors({
   },
 }));
 app.use(express.json());
-app.get("/health", (_request, response) => response.json({ status: "ok" }));
+app.get("/health", asyncRoute(async (_request, response) => {
+  await db.$queryRaw`SELECT 1`;
+  response.json({ status: "ok", database: "sqlite", connected: true });
+}));
 app.use("/schedules", schedules);
+app.use("/overview", overview);
 app.use("/rooms", rooms);
 app.use("/events", events);
 app.use("/announcements", announcements);
@@ -29,4 +35,24 @@ app.use("/agent", agent);
 app.use(errorHandler);
 
 const port = Number(process.env.PORT ?? 4000);
-app.listen(port, () => console.log(`CampusOS API listening on http://localhost:${port}`));
+let server: ReturnType<typeof app.listen>;
+
+async function start() {
+  await db.$connect();
+  server = app.listen(port, () => console.log(`CampusOS API listening on http://localhost:${port}`));
+}
+
+async function shutdown() {
+  if (!server) return db.$disconnect();
+  server.close(async () => {
+    await db.$disconnect();
+    process.exit(0);
+  });
+}
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
+start().catch(async (error) => {
+  console.error("Failed to start API", error);
+  await db.$disconnect();
+  process.exit(1);
+});
