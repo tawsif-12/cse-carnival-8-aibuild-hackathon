@@ -1,102 +1,81 @@
-# CampusOS — AI Build Hackathon
+# CampusOS
 
-An intelligent university platform powered by an AI agent that understands and acts on real-time campus data.
+A live campus data portal and tool-calling AI assistant. The dashboard and agent share one Express/Prisma API and one SQLite database, so dashboard edits are immediately visible to the agent.
 
----
+## Stack
 
-## The Challenge
+- Next.js 15 + React 19 frontend
+- Express 5 API
+- Prisma + SQLite
+- OpenAI Responses API with strict function tools
+- Shared Zod schemas and TypeScript contracts
 
-Students struggle daily with scattered campus information — class changes buried in group chats, deadlines forgotten until the last minute, no easy way to know what's happening on campus right now.
+## Run locally
 
-Your job: build **CampusOS** — a two-part app with a data dashboard and an AI agent that always reads live data.
-
-Read the full problem statement → [`PROBLEM_STATEMENT.md`](./PROBLEM_STATEMENT.md)
-
----
-
-## Repository Structure
-
-```
-campusos-hackathon/
-│
-├── README.md                    ← You are here
-├── PROBLEM_STATEMENT.md         ← Full problem statement + scoring
-├── SUBMISSION.md                ← How and where to submit
-│
-├── data/                        ← Seed data (load these into your backend)
-│   ├── schedules.json
-│   ├── rooms.json
-│   ├── events.json
-│   ├── announcements.json
-│   └── assignments.json
-│
-├── schema/
-│   └── schema.md                ← Field names, types, and constraints for all 5 systems
-│
-└── sample_queries/
-    └── sample_queries.md        ← Queries we will use when judging your agent
-```
-
----
-
-## How to Participate
-
-### 1. Fork the repository
-
-Click **Fork** in the top-right corner of this repo's GitHub page. This creates your own copy under your GitHub account, where you'll build your solution.
-
-### 2. Clone your fork
+Requirements: Node.js 20+ and an OpenAI API key for chat.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/campusos-hackathon.git
-cd campusos-hackathon
+npm install
+copy .env.example apps/api/.env
+npm run setup
+npm run dev
 ```
 
-### 3. Build your solution inside your fork
+On macOS/Linux, use `cp` instead of `copy`. On Windows systems that block `npm.ps1`, run `npm.cmd` instead of `npm`.
 
-> Your solution lives in your fork — do not open a pull request to this repo.
+Open:
 
-### 4. Making your fork private
+- Dashboard: http://localhost:3000
+- API: http://localhost:4000
+- Health check: http://localhost:4000/health
 
-By default, a fork is public. If you want to keep your work hidden from other participants while you build:
+Add your key to `apps/api/.env`:
 
-1. Go to your fork on GitHub
-2. Open **Settings** (top of the repo page)
-3. Scroll to the **Danger Zone** at the bottom
-4. Click **Change repository visibility** → **Make private**
-5. Confirm by typing the repository name
+```env
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-5-mini
+DATABASE_URL="file:./dev.db"
+PORT=4000
+WEB_ORIGIN="http://localhost:3000"
+CAMPUS_TIME_ZONE="Asia/Dhaka"
+```
 
-> **You may keep your fork private during the hackathon period, but it must be switched back to public by 8:30 PM on the submission deadline.** Repositories still private after that time will not be judged. To make it public again, repeat the steps above and choose **Make public** instead.
+The application works without an API key except for AI chat, which returns a clear setup message.
 
-### 5. Submit
+## Database behavior
 
-Submit your fork's public URL via the instructions in [`SUBMISSION.md`](./SUBMISSION.md).
+`npm run db:seed` reads all five files in `data/`. Each entity is seeded only when its table is empty; existing records are never overwritten. Bookings and registrations are relational records and are returned in the exact nested API shape.
 
----
+## API
 
-## Quick Links
+| Resource | Endpoints |
+| --- | --- |
+| Schedules | `GET/POST /schedules`, `PATCH/PUT/DELETE /schedules/:id` |
+| Rooms | CRUD, `POST /rooms/:id/book`, `DELETE /rooms/:id/bookings/:booking_id` |
+| Events | CRUD, `POST /events/:id/register`, `DELETE /events/:id/registrations/:student_id` |
+| Announcements | CRUD with priority and expiry filters |
+| Assignments | CRUD with status and due-window filters |
+| AI | `POST /agent/chat` |
 
-| Resource | Link |
-|----------|------|
-| Full problem statement | [`PROBLEM_STATEMENT.md`](./PROBLEM_STATEMENT.md) |
-| Data schema | [`schema/schema.md`](./schema/schema.md) |
-| Sample agent queries | [`sample_queries/sample_queries.md`](./sample_queries/sample_queries.md) |
-| Submission guide | [`SUBMISSION.md`](./SUBMISSION.md) |
+Room booking rejects overlapping ranges. Event registration rejects duplicates and full events, and automatically marks an event `full` when capacity is reached.
 
----
+## AI safety and live-data guarantees
 
-## Seed Data Overview
+The agent receives read tools plus room-booking and event-registration tools. It has no destructive delete tools. Every campus answer triggers live database reads. Incomplete booking requests are clarified before any action, and ambiguous event matches are not guessed.
 
-| File | Records | What It Contains |
-|------|---------|-----------------|
-| `schedules.json` | 24 | Class timetable — course, day, time, room, instructor |
-| `rooms.json` | 20 | Rooms 7A01–7A07, 7B01–7B08, 7C01–7C05 with equipment and bookings |
-| `events.json` | 7 | Campus events with registration lists |
-| `announcements.json` | 8 | Notices with priority levels and expiry dates |
-| `assignments.json` | 8 | Course assignments with deadlines and submission status |
+Demo identity:
 
-> **Important:** These JSON files are only the starting/seed data — not the database itself. Load them into a real backend (a database, or at minimum a backend service with persistent storage) on app startup. Your dashboard and AI agent must both read from and write to that backend, not the static JSON files directly. If you add, edit, or delete a record, the change must be saved in your backend and still be there after a reload — the JSON files in this repo will not update. The agent is also expected to always query the current backend state, not a cached or hardcoded copy of the seed data.
+```text
+student_id: my-student
+name: My Student
+timezone: Asia/Dhaka
+```
 
----
+## Useful commands
 
-Good luck. Build something that actually works.
+```bash
+npm run dev
+npm run typecheck
+npm run build
+npm run db:seed
+```
