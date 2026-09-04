@@ -5,7 +5,7 @@ import { asyncRoute, parse } from "../http";
 import { requireRoles } from "../auth";
 
 export const announcements = Router();
-announcements.get("/", asyncRoute(async (req, res) => {
+announcements.get("/", requireRoles("admin"), asyncRoute(async (req, res) => {
   const priority = typeof req.query.priority === "string" ? req.query.priority : undefined;
   const includeExpired = req.query.include_expired === "true";
   const today = new Date().toISOString().slice(0, 10);

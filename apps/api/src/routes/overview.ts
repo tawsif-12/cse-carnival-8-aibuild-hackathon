@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "../db";
 import { asyncRoute } from "../http";
 import { serializeEvent } from "../serializers";
+import { requireRoles } from "../auth";
 
 export const overview = Router();
 const week = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -12,7 +13,7 @@ function campusNow() {
   return { date: `${value.year}-${value.month}-${value.day}`, day: value.weekday ?? "Sunday", time: `${value.hour}:${value.minute}` };
 }
 
-overview.get("/", asyncRoute(async (_request, response) => {
+overview.get("/", requireRoles("admin"), asyncRoute(async (_request, response) => {
   const now = campusNow();
   const [schedules, dueSoon, urgent, upcoming, scheduleCount, assignmentCount, roomCount, eventCount, announcementCount] = await db.$transaction([
     db.schedule.findMany(),

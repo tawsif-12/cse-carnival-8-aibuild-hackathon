@@ -12,7 +12,7 @@ const roomInput = roomSchema.omit({ bookings: true });
 const bookingInput = bookingSchema.omit({ booking_id: true });
 const include = { bookings: { orderBy: [{ date: "asc" as const }, { start_time: "asc" as const }] } };
 
-rooms.get("/", asyncRoute(async (req, res) => {
+rooms.get("/", requireRoles("admin"), asyncRoute(async (req, res) => {
   const type = typeof req.query.type === "string" ? req.query.type : undefined;
   const capacity = req.query.capacity ? parse(z.coerce.number().int().positive(), req.query.capacity) : undefined;
   const equipment = typeof req.query.equipment === "string" ? req.query.equipment.split(",").filter(Boolean) : [];

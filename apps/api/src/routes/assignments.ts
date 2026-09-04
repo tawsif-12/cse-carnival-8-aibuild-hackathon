@@ -6,7 +6,7 @@ import { asyncRoute, parse } from "../http";
 import { requireRoles } from "../auth";
 
 export const assignments = Router();
-assignments.get("/", asyncRoute(async (req, res) => {
+assignments.get("/", requireRoles("admin"), asyncRoute(async (req, res) => {
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const days = req.query.due_within_days === undefined ? undefined : parse(z.coerce.number().int().nonnegative(), req.query.due_within_days);
   const now = new Date(); const end = new Date(now); if (days !== undefined) end.setUTCDate(end.getUTCDate() + days);
