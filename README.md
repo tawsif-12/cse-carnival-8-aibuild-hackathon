@@ -32,8 +32,8 @@ Open:
 Add your key to `apps/api/.env`:
 
 ```env
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-5-mini
+GEMINI_API_KEY=your_google_ai_studio_key
+GEMINI_MODEL=gemini-3.6-flash
 DATABASE_URL="file:./dev.db"
 PORT=4000
 WEB_ORIGIN="http://localhost:3000"
