@@ -4,23 +4,21 @@ import { z } from "zod";
 import { db } from "./db";
 import { asyncRoute, HttpError, parse } from "./http";
 import { serializeEvent, serializeRoom } from "./serializers";
+import { requireRoles } from "./auth";
 
 export const agent = Router();
 const chatSchema=z.object({message:z.string().min(1).max(4000),history:z.array(z.object({role:z.enum(["user","assistant"]),content:z.string().max(8000)})).max(20).default([])});
 const tools:any[]=[
  {type:"function",name:"list_schedules",description:"Read the live class schedule. Use for next-class and classes-by-day questions.",parameters:{type:"object",properties:{day:{type:["string","null"]},course:{type:["string","null"]}},required:["day","course"],additionalProperties:false},strict:true},
  {type:"function",name:"list_rooms",description:"Read and filter live rooms, including time-specific availability and equipment.",parameters:{type:"object",properties:{type:{type:["string","null"],enum:["classroom","lab","seminar",null]},min_capacity:{type:["number","null"]},equipment:{type:["string","null"],description:"Comma-separated equipment"},date:{type:["string","null"]},start_time:{type:["string","null"]},end_time:{type:["string","null"]}},required:["type","min_capacity","equipment","date","start_time","end_time"],additionalProperties:false},strict:true},
- {type:"function",name:"book_room",description:"Book one specific room only after the user supplied room, date, start/end time, and purpose. Never guess missing values.",parameters:{type:"object",properties:{room_id:{type:"string"},date:{type:"string"},start_time:{type:"string"},end_time:{type:"string"},purpose:{type:"string"}},required:["room_id","date","start_time","end_time","purpose"],additionalProperties:false},strict:true},
  {type:"function",name:"list_events",description:"Read live events. Name is a fuzzy search term.",parameters:{type:"object",properties:{date:{type:["string","null"]},status:{type:["string","null"]},name:{type:["string","null"]}},required:["date","status","name"],additionalProperties:false},strict:true},
- {type:"function",name:"register_event",description:"Register My Student for one event after identifying an unambiguous event and checking current capacity.",parameters:{type:"object",properties:{event_id:{type:"string"}},required:["event_id"],additionalProperties:false},strict:true},
  {type:"function",name:"list_announcements",description:"Read live announcements by priority, optionally including expired notices.",parameters:{type:"object",properties:{priority:{type:["string","null"],enum:["high","medium","low",null]},include_expired:{type:"boolean"}},required:["priority","include_expired"],additionalProperties:false},strict:true},
  {type:"function",name:"list_assignments",description:"Read live assignments, optionally by status or deadline window.",parameters:{type:"object",properties:{status:{type:["string","null"],enum:["pending","submitted","graded","late",null]},due_within_days:{type:["number","null"]}},required:["status","due_within_days"],additionalProperties:false},strict:true}
 ];
 const system=(now:string)=>`You are the CampusOS student assistant for My Student (student_id: my-student). Current campus date/time is ${now}; timezone Asia/Dhaka; university days are Sunday-Thursday.
 Always use tools for campus facts, even if the conversation contains an earlier result. Never invent or cache campus data. Interpret relative dates from the supplied current time and state the concrete date when discussing an action.
 For next class, read schedules and correctly roll forward across university days. For multi-source questions, call every needed read tool.
-Before book_room, require a specific room, date, start time, end time, and purpose. If any is missing or a request says 'any room' without choosing one, ask a concise clarification and do not book. You may list matching available rooms first.
-Before register_event, identify exactly one event from fresh data. Ask if matching is ambiguous. Never call destructive CRUD actions; explain that deletions must be done in the dashboard. Respect tool errors and clearly report conflicts/capacity failures. Keep answers concise and friendly. Return plain text without Markdown formatting.`;
+You serve a read-only student. Never book rooms, register for events, or change campus data. Explain that those actions require an authorized staff role. Respect tool errors and keep answers concise and friendly. Return plain text without Markdown formatting.`;
 
 type GeminiPart={text?:string;functionCall?:{id?:string;name:string;args?:Record<string,unknown>};functionResponse?:{id?:string;name:string;response:Record<string,unknown>}};
 type GeminiContent={role:"user"|"model";parts:GeminiPart[]};
@@ -62,7 +60,7 @@ async function execute(name:string,args:any){
  throw new HttpError(400,`Unknown tool: ${name}`);
 }
 
-agent.post("/chat",asyncRoute(async(req,res)=>{
+agent.post("/chat",requireRoles("student"),asyncRoute(async(req,res)=>{
  const input=parse(chatSchema,req.body),now=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Dhaka",dateStyle:"full",timeStyle:"short"}).format(new Date());
  const contents:GeminiContent[]=[...input.history.map(item=>({role:item.role==="assistant"?"model" as const:"user" as const,parts:[{text:item.content}]})),{role:"user",parts:[{text:input.message}]}];
  const used:string[]=[];let content=await generateGemini(contents,now);

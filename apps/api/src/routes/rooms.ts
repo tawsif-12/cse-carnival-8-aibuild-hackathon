@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "../db";
 import { asyncRoute, HttpError, parse } from "../http";
 import { serializeRoom } from "../serializers";
+import { requireRoles } from "../auth";
 
 export const rooms = Router();
 const roomInput = roomSchema.omit({ bookings: true });
@@ -27,21 +28,21 @@ rooms.get("/", asyncRoute(async (req, res) => {
   });
   res.json(records.map(serializeRoom).filter((room) => equipment.every((item) => room.equipment.some((value) => value.toLowerCase() === item.toLowerCase()))));
 }));
-rooms.post("/", asyncRoute(async (req, res) => {
+rooms.post("/", requireRoles("admin"), asyncRoute(async (req, res) => {
   const data = parse(roomInput, req.body);
   const record = await db.room.create({ data: { ...data, equipment: JSON.stringify(data.equipment) }, include });
   res.status(201).json(serializeRoom(record));
 }));
-for (const method of ["patch", "put"] as const) rooms[method]("/:id", asyncRoute(async (req, res) => {
+for (const method of ["patch", "put"] as const) rooms[method]("/:id", requireRoles("admin"), asyncRoute(async (req, res) => {
   const schema = method === "patch" ? roomInput.omit({ id: true }).partial() : roomInput.omit({ id: true });
   const data = parse(schema, req.body);
   const record = await db.room.update({ where: { id: String(req.params.id) }, data: { ...data, equipment: data.equipment ? JSON.stringify(data.equipment) : undefined }, include });
   res.json(serializeRoom(record));
 }));
-rooms.delete("/:id", asyncRoute(async (req, res) => {
+rooms.delete("/:id", requireRoles("admin"), asyncRoute(async (req, res) => {
   res.json(serializeRoom(await db.room.delete({ where: { id: String(req.params.id) }, include })));
 }));
-rooms.post("/:id/book", asyncRoute(async (req, res) => {
+rooms.post("/:id/book", requireRoles("admin"), asyncRoute(async (req, res) => {
   const data = parse(bookingInput, req.body);
   if (data.start_time >= data.end_time) throw new HttpError(400, "end_time must be after start_time");
   const room = await db.$transaction(async (tx) => {
@@ -55,7 +56,7 @@ rooms.post("/:id/book", asyncRoute(async (req, res) => {
   });
   res.status(201).json(serializeRoom(room));
 }));
-rooms.delete("/:id/bookings/:booking_id", asyncRoute(async (req, res) => {
+rooms.delete("/:id/bookings/:booking_id", requireRoles("admin"), asyncRoute(async (req, res) => {
   const booking = await db.booking.findFirst({ where: { booking_id: String(req.params.booking_id), room_id: String(req.params.id) } });
   if (!booking) throw new HttpError(404, "Booking not found for this room");
   await db.booking.delete({ where: { booking_id: booking.booking_id } });
