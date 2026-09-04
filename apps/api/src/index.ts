@@ -23,6 +23,7 @@ app.use(cors({
   },
 }));
 app.use(express.json());
+app.get("/", (_request, response) => response.json({ name: "CampusOS API", dashboard: "http://localhost:3000", health: "/health", resources: ["/overview", "/schedules", "/rooms", "/events", "/announcements", "/assignments", "/agent/chat"] }));
 app.get("/health", asyncRoute(async (_request, response) => {
   await db.$queryRaw`SELECT 1`;
   response.json({ status: "ok", database: "sqlite", connected: true });

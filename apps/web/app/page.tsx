@@ -10,6 +10,7 @@ type UserSession={id:string;name:string;email:string;role:Role};
 const initial:Data={schedules:[],assignments:[],events:[],announcements:[],rooms:[]};
 const today=new Date(),iso=today.toISOString().slice(0,10),day=today.toLocaleDateString("en-US",{weekday:"long"});
 const dateLabel=today.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+const floorDepartments:Record<number,string>={1:"Civil Engineering",2:"Civil Engineering",3:"Electrical & Electronic Engineering",4:"Electrical & Electronic Engineering",5:"Arts & Science",6:"Textile Engineering",7:"Computer Science & Engineering",8:"Mechanical Engineering"};
 function sessionHeader():Record<string,string>{const token=typeof window!=="undefined"?localStorage.getItem("campus_token"):null;return token?{Authorization:`Bearer ${token}`}:{}}
 async function api<T>(path:string,options:RequestInit|undefined,_role:Role):Promise<T>{const response=await fetch(API+path,{...options,headers:{"Content-Type":"application/json",...sessionHeader(),...options?.headers}});const body=await response.json();if(!response.ok)throw new Error(body.error??"Request failed");return body}
 
@@ -73,7 +74,7 @@ function Rooms({rooms,schedules,role,change,notify,fail}:{rooms:Room[];schedules
  if(!rooms.length)return <><div className="blank roomBlank"><span>▦</span><h2>No rooms available</h2><p>Add rooms to the database to see the availability calendar.</p>{role==="admin"&&<button className="newButton" onClick={()=>setRoomEditor("new")}>+ Add room</button>}</div>{roomEditor&&<RoomForm close={()=>setRoomEditor(null)} save={saveRoom}/>}</>;
  return <section className="roomsPage">
   <div className="roomFilters">
-   <label>Choose room<select value={room?.id} onChange={event=>{setRoomId(event.target.value);setSelectedSlot("")}}>{eligible.map(item=><option value={item.id} key={item.id}>{item.room_number} · {item.type}</option>)}</select></label>
+    <label>Choose room<select value={room?.id} onChange={event=>{setRoomId(event.target.value);setSelectedSlot("")}}>{eligible.map(item=><option value={item.id} key={item.id}>{item.room_number} · Floor {item.floor} · {floorDepartments[item.floor]??"General"}</option>)}</select></label>
    <label>Choose date<input type="date" value={selectedDate} onChange={event=>{setSelectedDate(event.target.value);setSelectedSlot("")}}/></label>
    <label>Minimum capacity<select value={capacity} onChange={event=>setCapacity(event.target.value)}><option value="all">All capacities</option><option value="30">30+ people</option><option value="40">40+ people</option><option value="50">50+ people</option><option value="60">60+ people</option></select></label>{role==="admin"&&<button className="newButton roomAdd" onClick={()=>setRoomEditor("new")}>+ Add room</button>}
   </div>
