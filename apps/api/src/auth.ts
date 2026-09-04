@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { HttpError } from "./http";
 
-export const roles = ["admin", "representative", "student"] as const;
+export const roles = ["admin", "teacher", "representative", "student"] as const;
 export type Role = typeof roles[number];
 export type Session = { id: string; name: string; email: string; role: Role; exp: number };
 

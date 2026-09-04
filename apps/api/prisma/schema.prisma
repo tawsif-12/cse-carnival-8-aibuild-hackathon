@@ -13,9 +13,74 @@ model User {
   email         String @unique
   password_hash String
   role          String
+  department    String?
+  academic_year Int?
+  semester      Int?
   created_at    DateTime @default(now())
+  taught_courses CourseOffering[] @relation("OfferingTeacher")
+  memberships   CourseMember[]
+  lectures      CourseLecture[]
 
   @@index([role])
+}
+
+model CourseOffering {
+  id            String @id
+  code          String
+  title         String
+  department    String
+  academic_year Int
+  semester      Int
+  teacher_id    String?
+  teacher       User? @relation("OfferingTeacher", fields: [teacher_id], references: [id], onDelete: SetNull)
+  members       CourseMember[]
+  lectures      CourseLecture[]
+  announcements CohortAnnouncement[]
+
+  @@unique([code, department, academic_year, semester])
+  @@index([department, academic_year, semester])
+}
+
+model CourseMember {
+  id        Int @id @default(autoincrement())
+  user_id   String
+  course_id String
+  user      User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course    CourseOffering @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+}
+
+model CourseLecture {
+  id          String @id
+  course_id   String
+  teacher_id  String
+  title       String
+  description String
+  content_url String
+  created_at  DateTime @default(now())
+  course      CourseOffering @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  teacher     User @relation(fields: [teacher_id], references: [id])
+
+  @@index([course_id, created_at])
+}
+
+model CohortAnnouncement {
+  id            String @id
+  title         String
+  body          String
+  department    String
+  academic_year Int
+  semester      Int
+  course_id     String?
+  course        CourseOffering? @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  author_id     String
+  author_name   String
+  priority      String
+  expires       String
+  created_at    DateTime @default(now())
+
+  @@index([department, academic_year, semester, created_at])
 }
 
 model Schedule {

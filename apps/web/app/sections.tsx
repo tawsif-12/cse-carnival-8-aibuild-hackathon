@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Assignment, Booking, Event, Registration, Room, Schedule } from "@campus-os/contracts";
 export type PortalView="overview"|"schedule"|"rooms"|"events"|"announcements"|"assignments"|"chat";
-export type Role="admin"|"representative"|"student";
+export type Role="admin"|"teacher"|"representative"|"student";
 const API=process.env.NEXT_PUBLIC_API_URL??"http://localhost:4000";const today=new Date().toISOString().slice(0,10);const days=["Sunday","Monday","Tuesday","Wednesday","Thursday"];
 async function api<T>(path:string,options:RequestInit|undefined,_role:Role):Promise<T>{const token=localStorage.getItem("campus_token");const r=await fetch(API+path,{...options,headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{ }),...options?.headers}});const body=await r.json();if(!r.ok)throw new Error(body.error??"Request failed");return body}
 export function PortalSection({view,notify,role}:{view:PortalView;notify(x:string):void;role:Role}){if(view==="chat")return role==="student"?<Chat role={role}/>:<AccessDenied text="CampusOS AI is available from the student portal."/>;if(view==="schedule")return <ScheduleView notify={notify} role={role}/>;if(view==="assignments")return <AssignmentsView notify={notify} role={role}/>;if(view==="rooms")return <RoomsView notify={notify} role={role}/>;if(view==="events")return <EventsView notify={notify} role={role}/>;return null}
