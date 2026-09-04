@@ -19,6 +19,7 @@ app.use(cors({
   },
 }));
 app.use(express.json());
+app.get("/", (_request, response) => response.json({ name: "CampusOS API", dashboard: "http://localhost:3000", health: "/health", resources: ["/schedules", "/rooms", "/events", "/announcements", "/assignments", "/agent/chat"] }));
 app.get("/health", (_request, response) => response.json({ status: "ok" }));
 app.use("/schedules", schedules);
 app.use("/rooms", rooms);
