@@ -7,6 +7,7 @@ const START_HOUR = 9;
 const END_HOUR = 18;
 const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, index) => START_HOUR + index);
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const FLOOR_DEPARTMENTS = { 1: "Civil Engineering", 2: "Civil Engineering", 3: "Electrical & Electronic Engineering", 4: "Electrical & Electronic Engineering", 5: "Arts & Science", 6: "Textile Engineering", 7: "Computer Science & Engineering", 8: "Mechanical Engineering" };
 const COURSE_COLORS = {
   CSE: ["#dcecff", "#2d73d5"],
   EEE: ["#ece5ff", "#7959c7"],
@@ -151,7 +152,7 @@ export default function ScheduleTimeline() {
   return <section className="schedulePage">
     <div className="scheduleToolbar">
       <div><span className="scheduleEyebrow">STUDENT PLANNER</span><h2>Official schedule</h2><p>Browse published classes and build your personal timetable.</p></div>
-      <div className="scheduleControls"><div className="segmented">{["Day", "Week", "Month"].map((item) => <button key={item} className={mode === item ? "selected" : ""} onClick={() => setMode(item)}>{item}</button>)}</div><label className="scheduleFloor"><span>Floor</span><select value={floor} onChange={(event) => setFloor(event.target.value)}><option value="all">All floors</option>{floorOptions.map((item) => <option key={item} value={item}>Floor {item}</option>)}</select></label><label className="scheduleFilter">⌕<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Course, instructor, room" /></label><span className="myScheduleCount">{mySchedule.length} selected</span></div>
+      <div className="scheduleControls"><div className="segmented">{["Day", "Week", "Month"].map((item) => <button key={item} className={mode === item ? "selected" : ""} onClick={() => setMode(item)}>{item}</button>)}</div><label className="scheduleFloor"><span>Floor</span><select value={floor} onChange={(event) => setFloor(event.target.value)}><option value="all">All floors</option>{floorOptions.map((item) => <option key={item} value={item}>Floor {item} · {FLOOR_DEPARTMENTS[item] || "General"}</option>)}</select></label><label className="scheduleFilter">⌕<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Course, instructor, room" /></label><span className="myScheduleCount">{mySchedule.length} selected</span></div>
     </div>
     {error && <div className="scheduleError">{error}<button onClick={() => setError("")}>×</button></div>}
     <div className="scheduleNavigator"><div className="dayPicker"><button onClick={() => moveDay(-1)} aria-label="Previous day">‹</button><div><span>SELECTED DAY</span><b>{formatDay(parseDateForDay(selectedDay))}</b></div><button onClick={() => moveDay(1)} aria-label="Next day">›</button></div><div className="scheduleMeta"><span>{classCount} {classCount === 1 ? "class" : "classes"}</span><small>{visibleRooms.length} of {allRooms.length} rooms</small>{mode !== "Day" && <small>{mode} view preview</small>}</div></div>

@@ -3589,8 +3589,8 @@ section h2,
   padding: 42px 58px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 15% 85%, #5930ce77, transparent 26rem),
-    linear-gradient(145deg, #075ed8, #17398f 55%, #261866);
+    linear-gradient(135deg, rgba(7, 32, 88, 0.55), rgba(16, 20, 54, 0.78)),
+    url("/aust.jpeg") center / cover no-repeat;
 }
 .authBrand:before,
 .authBrand:after {
