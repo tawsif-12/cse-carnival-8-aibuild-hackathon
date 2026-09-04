@@ -24,9 +24,10 @@ async function load<T>(file: string, schema: z.ZodType<T>): Promise<T[]> {
 }
 
 async function main() {
-  const [schedules, rooms, events, announcements, assignments] = await Promise.all([
+  const [schedules, rooms, universityRooms, events, announcements, assignments] = await Promise.all([
     load<Schedule>("schedules.json", scheduleSchema),
     load<Room>("rooms.json", roomSchema),
+    load<Room>("university_rooms.json", roomSchema),
     load<Event>("events.json", eventSchema),
     load<Announcement>("announcements.json", announcementSchema),
     load<Assignment>("assignments.json", assignmentSchema),
@@ -38,7 +39,8 @@ async function main() {
       for (const schedule of schedules) await tx.schedule.create({ data: schedule });
       loaded.schedules = schedules.length;
     }
-    if (await tx.room.count() === 0) for (const room of rooms) {
+    for (const room of [...rooms, ...universityRooms]) {
+      if (await tx.room.findUnique({ where: { id: room.id } })) continue;
       const { bookings, equipment, ...record } = room;
       await tx.room.create({ data: { ...record, equipment: JSON.stringify(equipment), bookings: { create: bookings } } });
       loaded.rooms++;
