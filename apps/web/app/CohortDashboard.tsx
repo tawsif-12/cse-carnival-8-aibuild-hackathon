@@ -20,6 +20,9 @@ type Course = {
   section:string;
   teacher: { id: string; name: string } | null;
   lectures: Lecture[];
+  members: {
+    user: { id: string; name: string; email: string; role: Role };
+  }[];
   _count: { members: number };
 };
 type Notice = {
@@ -86,7 +89,8 @@ export default function CohortDashboard({
     [busy, setBusy] = useState(false),
     [users, setUsers] = useState<ManagedUser[]>([]),
     [userEditor, setUserEditor] = useState(false),
-    [courseEditor, setCourseEditor] = useState(false),
+    [courseEditor, setCourseEditor] = useState<Course | "new" | null>(null),
+    [courseSearch, setCourseSearch] = useState(""),
     [memberByCourse, setMemberByCourse] = useState<Record<string, string>>({}),
     [lectureCourse, setLectureCourse] = useState<Course | null>(null),
     [announcement, setAnnouncement] = useState(false);
@@ -116,6 +120,15 @@ export default function CohortDashboard({
   const cohort = data.user.department
     ? `${data.user.department} · Year ${data.user.academic_year} · Semester ${data.user.semester} · Section ${data.user.section ?? "-"}`
     : "University-wide access";
+  const visibleCourses = data.courses.filter((course) => {
+    const query = courseSearch.trim().toLowerCase();
+    return (
+      !query ||
+      `${course.code} ${course.title} ${course.department} ${course.teacher?.name ?? "unassigned"}`
+        .toLowerCase()
+        .includes(query)
+    );
+  });
   return (
     <div className="cohortDashboard">
       <div className="roleHero">
@@ -215,16 +228,221 @@ export default function CohortDashboard({
                   : "My assigned courses"}
             </h2>
             <p>
-              Only courses assigned to this authenticated account are shown.
+              {role === "admin"
+                ? "Review course scope, teachers, enrollment, and lecture content from one structured workspace."
+                : "Only courses assigned to this authenticated account are shown."}
             </p>
           </div>
           {role === "admin" && (
-            <button className="newButton" onClick={() => setCourseEditor(true)}>
+            <button
+              className="newButton"
+              onClick={() => setCourseEditor("new")}
+            >
               + Create course
             </button>
           )}
         </div>
-        {data.courses.length ? (
+        {data.courses.length ? role === "admin" ? (
+          <div className="adminCoursePanel">
+            <div className="adminCourseToolbar">
+              <label>
+                <span>Search offerings</span>
+                <input
+                  value={courseSearch}
+                  onChange={(event) => setCourseSearch(event.target.value)}
+                  placeholder="Course code, title, teacher, or department"
+                />
+              </label>
+              <div>
+                <span>
+                  <b>{data.courses.length}</b> offerings
+                </span>
+                <span>
+                  <b>
+                    {data.courses.filter((course) => course.teacher).length}
+                  </b>{" "}
+                  assigned
+                </span>
+                <span>
+                  <b>
+                    {data.courses.reduce(
+                      (total, course) => total + course._count.members,
+                      0,
+                    )}
+                  </b>{" "}
+                  enrollments
+                </span>
+              </div>
+            </div>
+            <div className="adminCourseList">
+              {visibleCourses.map((course) => (
+                <article className="adminCourseRow" key={course.id}>
+                  <div className="adminCourseSummary">
+                    <div className="adminCourseIdentity">
+                      <span>{course.code.replace(/\s/g, "").slice(0, 3)}</span>
+                      <div>
+                        <b>{course.code}</b>
+                        <small>{course.title}</small>
+                      </div>
+                    </div>
+                    <span className="courseScope">
+                      {course.department} · Year {course.academic_year} · Sem{" "}
+                      {course.semester} · Section {course.section}
+                    </span>
+                    <div className="courseTeacher">
+                      <small>TEACHER</small>
+                      <b>{course.teacher?.name ?? "Not assigned"}</b>
+                    </div>
+                    <div className="courseCounts">
+                      <span>
+                        <b>{course._count.members}</b> students
+                      </span>
+                      <span>
+                        <b>{course.lectures.length}</b> materials
+                      </span>
+                    </div>
+                    <div className="adminCourseActions">
+                      <button onClick={() => setLectureCourse(course)}>
+                        + Material
+                      </button>
+                      <button onClick={() => setCourseEditor(course)}>
+                        Edit
+                      </button>
+                      <button
+                        className="danger"
+                        onClick={async () => {
+                          if (!confirm(`Delete ${course.code}?`)) return;
+                          try {
+                            await request(`/portal/courses/${course.id}`, {
+                              method: "DELETE",
+                            });
+                            await load();
+                            notify("Course offering deleted");
+                          } catch (reason) {
+                            setError((reason as Error).message);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  <div className="adminCourseManage">
+                    <div className="courseEnroll">
+                      <select
+                        value={memberByCourse[course.id] ?? ""}
+                        onChange={(event) =>
+                          setMemberByCourse((current) => ({
+                            ...current,
+                            [course.id]: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">Add matching student or CR</option>
+                        {users
+                          .filter(
+                            (user) =>
+                              (user.role === "student" ||
+                                user.role === "cr") &&
+                              user.department === course.department &&
+                              user.academic_year === course.academic_year &&
+                              user.semester === course.semester &&
+                              user.section === course.section &&
+                              !course.members.some(
+                                (member) => member.user.id === user.id,
+                              ),
+                          )
+                          .map((user) => (
+                            <option value={user.id} key={user.id}>
+                              {user.name} ({user.role})
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        disabled={!memberByCourse[course.id]}
+                        onClick={async () => {
+                          try {
+                            await request(
+                              `/portal/courses/${course.id}/members`,
+                              {
+                                method: "POST",
+                                body: JSON.stringify({
+                                  user_id: memberByCourse[course.id],
+                                }),
+                              },
+                            );
+                            setMemberByCourse((current) => ({
+                              ...current,
+                              [course.id]: "",
+                            }));
+                            await load();
+                            notify("Course member assigned");
+                          } catch (reason) {
+                            setError((reason as Error).message);
+                          }
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <div className="enrolledMembers">
+                      {course.members.map(({ user }) => (
+                        <span key={user.id}>
+                          <span>
+                            {user.name} <small>{user.role}</small>
+                          </span>
+                          <button
+                            title={`Remove ${user.name} from ${course.code}`}
+                            onClick={async () => {
+                              try {
+                                await request(
+                                  `/portal/courses/${course.id}/members/${user.id}`,
+                                  { method: "DELETE" },
+                                );
+                                await load();
+                                notify("Course member removed");
+                              } catch (reason) {
+                                setError((reason as Error).message);
+                              }
+                            }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                      {!course.members.length && (
+                        <small>No students enrolled yet</small>
+                      )}
+                    </div>
+                    {!!course.lectures.length && (
+                      <details className="courseMaterials">
+                        <summary>{course.lectures.length} lecture links</summary>
+                        <div>
+                          {course.lectures.map((lecture) => (
+                            <a
+                              key={lecture.id}
+                              href={lecture.content_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {lecture.title}
+                            </a>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                </article>
+              ))}
+              {!visibleCourses.length && (
+                <div className="blank compactBlank">
+                  <h2>No matching course offerings</h2>
+                  <p>Try a different course, teacher, or department.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
           <div className="courseCards">
             {data.courses.map((course) => (
               <article key={course.id}>
@@ -257,63 +475,13 @@ export default function CohortDashboard({
                 ) : (
                   <small>No lecture content yet.</small>
                 )}
-                {(role === "teacher" || role === "admin") && (
+                {role === "teacher" && (
                   <button
                     className="newButton"
                     onClick={() => setLectureCourse(course)}
                   >
                     + Upload lecture link
                   </button>
-                )}
-                {role === "admin" && (
-                  <div className="courseEnroll">
-                    <select
-                      value={memberByCourse[course.id] ?? ""}
-                      onChange={(e) =>
-                        setMemberByCourse((current) => ({
-                          ...current,
-                          [course.id]: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Assign student / CR</option>
-                      {users
-                        .filter(
-                          (user) =>
-                            (user.role === "student" || user.role === "cr") &&
-                            user.department === course.department &&
-                            user.academic_year === course.academic_year &&
-                            user.semester === course.semester && user.section===course.section,
-                        )
-                        .map((user) => (
-                          <option value={user.id} key={user.id}>
-                            {user.name} ({user.role})
-                          </option>
-                        ))}
-                    </select>
-                    <button
-                      disabled={!memberByCourse[course.id]}
-                      onClick={async () => {
-                        try {
-                          await request(
-                            `/portal/courses/${course.id}/members`,
-                            {
-                              method: "POST",
-                              body: JSON.stringify({
-                                user_id: memberByCourse[course.id],
-                              }),
-                            },
-                          );
-                          await load();
-                          notify("Course member assigned");
-                        } catch (reason) {
-                          setError((reason as Error).message);
-                        }
-                      }}
-                    >
-                      Assign
-                    </button>
-                  </div>
                 )}
               </article>
             ))}
@@ -441,19 +609,24 @@ export default function CohortDashboard({
       )}
       {courseEditor && (
         <CourseForm
+          item={courseEditor === "new" ? undefined : courseEditor}
           users={users}
           busy={busy}
-          close={() => setCourseEditor(false)}
+          close={() => setCourseEditor(null)}
           submit={async (value) => {
             setBusy(true);
             try {
-              await request("/portal/courses", {
-                method: "POST",
+              const editing = courseEditor !== "new";
+              await request(
+                `/portal/courses${editing ? `/${courseEditor.id}` : ""}`,
+                {
+                method: editing ? "PATCH" : "POST",
                 body: JSON.stringify(value),
-              });
+                },
+              );
               await load();
-              setCourseEditor(false);
-              notify("Course created");
+              setCourseEditor(null);
+              notify(editing ? "Course offering updated" : "Course created");
             } catch (reason) {
               setError((reason as Error).message);
             } finally {
@@ -595,24 +768,26 @@ function UserForm({
   );
 }
 function CourseForm({
+  item,
   users,
   busy,
   close,
   submit,
 }: {
+  item?: Course;
   users: ManagedUser[];
   busy: boolean;
   close(): void;
   submit(value: Record<string, unknown>): void;
 }) {
   const [x, set] = useState({
-    code: "",
-    title: "",
-    department: "CSE",
-    academic_year: 1,
-    semester: 1,
-    section: "A",
-    teacher_id: "",
+    code: item?.code ?? "",
+    title: item?.title ?? "",
+    department: item?.department ?? "CSE",
+    academic_year: item?.academic_year ?? 1,
+    semester: item?.semester ?? 1,
+    section: item?.section ?? "A",
+    teacher_id: item?.teacher?.id ?? "",
   });
   return (
     <div className="backdrop">
@@ -626,7 +801,7 @@ function CourseForm({
         <div className="modalTitle">
           <div>
             <small>ADMIN ONLY</small>
-            <h2>Create course offering</h2>
+            <h2>{item ? "Edit course offering" : "Create course offering"}</h2>
           </div>
           <button type="button" onClick={close}>
             ×
@@ -711,7 +886,7 @@ function CourseForm({
             Cancel
           </button>
           <button className="newButton" disabled={busy}>
-            Create course
+            {item ? "Save changes" : "Create course"}
           </button>
         </div>
       </form>
