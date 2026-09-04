@@ -1,0 +1,14 @@
+CREATE TABLE "CampusUser" ("id" TEXT NOT NULL PRIMARY KEY, "name" TEXT NOT NULL, "email" TEXT NOT NULL, "role" TEXT NOT NULL, "semester" TEXT);
+CREATE UNIQUE INDEX "CampusUser_email_key" ON "CampusUser"("email");
+CREATE INDEX "CampusUser_role_idx" ON "CampusUser"("role");
+CREATE INDEX "CampusUser_semester_idx" ON "CampusUser"("semester");
+CREATE TABLE "Course" ("id" TEXT NOT NULL PRIMARY KEY, "code" TEXT NOT NULL, "title" TEXT NOT NULL, "semester" TEXT NOT NULL, "teacher_id" TEXT NOT NULL, CONSTRAINT "Course_teacher_id_fkey" FOREIGN KEY ("teacher_id") REFERENCES "CampusUser"("id") ON DELETE RESTRICT ON UPDATE CASCADE);
+CREATE UNIQUE INDEX "Course_code_key" ON "Course"("code");
+CREATE INDEX "Course_semester_idx" ON "Course"("semester");
+CREATE INDEX "Course_teacher_id_idx" ON "Course"("teacher_id");
+CREATE TABLE "Enrollment" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "user_id" TEXT NOT NULL, "course_id" TEXT NOT NULL, CONSTRAINT "Enrollment_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "CampusUser"("id") ON DELETE CASCADE ON UPDATE CASCADE, CONSTRAINT "Enrollment_course_id_fkey" FOREIGN KEY ("course_id") REFERENCES "Course"("id") ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE UNIQUE INDEX "Enrollment_user_id_course_id_key" ON "Enrollment"("user_id", "course_id");
+CREATE TABLE "Lecture" ("id" TEXT NOT NULL PRIMARY KEY, "course_id" TEXT NOT NULL, "teacher_id" TEXT NOT NULL, "title" TEXT NOT NULL, "description" TEXT NOT NULL, "content_url" TEXT NOT NULL, "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Lecture_course_id_fkey" FOREIGN KEY ("course_id") REFERENCES "Course"("id") ON DELETE CASCADE ON UPDATE CASCADE, CONSTRAINT "Lecture_teacher_id_fkey" FOREIGN KEY ("teacher_id") REFERENCES "CampusUser"("id") ON DELETE RESTRICT ON UPDATE CASCADE);
+CREATE INDEX "Lecture_course_id_created_at_idx" ON "Lecture"("course_id", "created_at");
+CREATE TABLE "SemesterAnnouncement" ("id" TEXT NOT NULL PRIMARY KEY, "title" TEXT NOT NULL, "body" TEXT NOT NULL, "semester" TEXT NOT NULL, "author_id" TEXT NOT NULL, "author_name" TEXT NOT NULL, "author_role" TEXT NOT NULL, "priority" TEXT NOT NULL, "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "expires" TEXT NOT NULL);
+CREATE INDEX "SemesterAnnouncement_semester_created_at_idx" ON "SemesterAnnouncement"("semester", "created_at");

@@ -3,6 +3,7 @@ import { eventSchema, registrationSchema } from "@campus-os/contracts";
 import { db } from "../db";
 import { asyncRoute, HttpError, parse } from "../http";
 import { serializeEvent } from "../serializers";
+import { requireRoles } from "../auth";
 
 export const events = Router();
 const eventInput = eventSchema.omit({ registrations: true });
@@ -12,19 +13,19 @@ events.get("/", asyncRoute(async (req, res) => {
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   res.json((await db.event.findMany({ where: { date, status }, include, orderBy: [{ date: "asc" }, { start_time: "asc" }] })).map(serializeEvent));
 }));
-events.post("/", asyncRoute(async (req, res) => {
+events.post("/", requireRoles("admin"), asyncRoute(async (req, res) => {
   const data = parse(eventInput, req.body);
   if (data.registered !== 0) throw new HttpError(400, "New events must start with registered = 0");
   res.status(201).json(serializeEvent(await db.event.create({ data, include })));
 }));
-for (const method of ["patch", "put"] as const) events[method]("/:id", asyncRoute(async (req, res) => {
+for (const method of ["patch", "put"] as const) events[method]("/:id", requireRoles("admin"), asyncRoute(async (req, res) => {
   const schema = method === "patch" ? eventInput.omit({ id: true, registered: true }).partial() : eventInput.omit({ id: true, registered: true });
   res.json(serializeEvent(await db.event.update({ where: { id: String(req.params.id) }, data: parse(schema, req.body), include })));
 }));
-events.delete("/:id", asyncRoute(async (req, res) => {
+events.delete("/:id", requireRoles("admin"), asyncRoute(async (req, res) => {
   res.json(serializeEvent(await db.event.delete({ where: { id: String(req.params.id) }, include })));
 }));
-events.post("/:id/register", asyncRoute(async (req, res) => {
+events.post("/:id/register", requireRoles("admin"), asyncRoute(async (req, res) => {
   const registration = parse(registrationSchema, req.body);
   const event = await db.$transaction(async (tx) => {
     const eventId = String(req.params.id);
@@ -41,7 +42,7 @@ events.post("/:id/register", asyncRoute(async (req, res) => {
   });
   res.status(201).json(serializeEvent(event));
 }));
-events.delete("/:id/registrations/:student_id", asyncRoute(async (req, res) => {
+events.delete("/:id/registrations/:student_id", requireRoles("admin"), asyncRoute(async (req, res) => {
   const event = await db.$transaction(async (tx) => {
     const eventId = String(req.params.id);
     const registration = await tx.registration.findUnique({ where: { event_id_student_id: { event_id: eventId, student_id: String(req.params.student_id) } } });
