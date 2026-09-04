@@ -87,6 +87,7 @@ export default function ScheduleTimeline() {
   const [schedules, setSchedules] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [selectedDay, setSelectedDay] = useState(DAYS[new Date().getDay()]);
+  const [floor, setFloor] = useState("all");
   const [mode, setMode] = useState("Day");
   const [filter, setFilter] = useState("");
   const [modal, setModal] = useState(null);
@@ -115,12 +116,15 @@ export default function ScheduleTimeline() {
 
   useEffect(() => { loadData(); }, []);
 
-  const visibleRooms = rooms.length ? rooms : MOCK_ROOMS;
+  const allRooms = rooms.length ? rooms : MOCK_ROOMS;
+  const floorOptions = [...new Set(allRooms.map((room) => room.floor).filter(Boolean))].sort((a, b) => a - b);
+  const visibleRooms = allRooms.filter((room) => floor === "all" || String(room.floor) === floor).sort((a, b) => a.room_number.localeCompare(b.room_number, undefined, { numeric: true }));
   const dayClasses = useMemo(() => schedules.filter((item) => item.day === selectedDay).filter((item) => {
     const needle = filter.trim().toLowerCase();
-    return !needle || item.course.toLowerCase().includes(needle) || item.instructor.toLowerCase().includes(needle);
-  }), [schedules, selectedDay, filter]);
-  const classCount = schedules.filter((item) => item.day === selectedDay).length;
+    const room = String(item.room || "").toLowerCase();
+    return (!needle || item.course.toLowerCase().includes(needle) || item.instructor.toLowerCase().includes(needle) || room.includes(needle)) && visibleRooms.some((entry) => entry.room_number === item.room);
+  }), [schedules, selectedDay, filter, visibleRooms]);
+  const classCount = dayClasses.length;
   const colors = useMemo(() => Object.fromEntries([...new Set(schedules.map((item) => item.course))].map((course, index) => [course, coursePalette(course, index)])), [schedules]);
   const conflicts = useMemo(() => {
     const grouped = {};
@@ -169,13 +173,13 @@ export default function ScheduleTimeline() {
 
   return <section className="schedulePage">
     <div className="scheduleToolbar">
-      <div><span className="scheduleEyebrow">CAMPUS PLANNER</span><h2>Schedule</h2><p>See every room at a glance and keep the day moving.</p></div>
-      <div className="scheduleControls"><div className="segmented">{["Day", "Week", "Month"].map((item) => <button key={item} className={mode === item ? "selected" : ""} onClick={() => setMode(item)}>{item}</button>)}</div><label className="scheduleFilter">⌕<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter course or instructor" /></label><button className="addClass" onClick={openAdd}>+ <span>Add Class</span></button></div>
+      <div><span className="scheduleEyebrow">UNIVERSITY PLANNER</span><h2>Schedule</h2><p>See every teaching space across campus at a glance.</p></div>
+      <div className="scheduleControls"><div className="segmented">{["Day", "Week", "Month"].map((item) => <button key={item} className={mode === item ? "selected" : ""} onClick={() => setMode(item)}>{item}</button>)}</div><label className="scheduleFloor"><span>Floor</span><select value={floor} onChange={(event) => setFloor(event.target.value)}><option value="all">All floors</option>{floorOptions.map((item) => <option key={item} value={item}>Floor {item}</option>)}</select></label><label className="scheduleFilter">⌕<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Course, instructor, room" /></label><button className="addClass" onClick={openAdd}>+ <span>Add Class</span></button></div>
     </div>
     {error && <div className="scheduleError">{error}<button onClick={() => setError("")}>×</button></div>}
-    <div className="scheduleNavigator"><div className="dayPicker"><button onClick={() => moveDay(-1)} aria-label="Previous day">‹</button><div><span>SELECTED DAY</span><b>{formatDay(parseDateForDay(selectedDay))}</b></div><button onClick={() => moveDay(1)} aria-label="Next day">›</button></div><div className="scheduleMeta"><span>{classCount} {classCount === 1 ? "class" : "classes"}</span>{mode !== "Day" && <small>{mode} view preview</small>}</div></div>
+    <div className="scheduleNavigator"><div className="dayPicker"><button onClick={() => moveDay(-1)} aria-label="Previous day">‹</button><div><span>SELECTED DAY</span><b>{formatDay(parseDateForDay(selectedDay))}</b></div><button onClick={() => moveDay(1)} aria-label="Next day">›</button></div><div className="scheduleMeta"><span>{classCount} {classCount === 1 ? "class" : "classes"}</span><small>{visibleRooms.length} of {allRooms.length} rooms</small>{mode !== "Day" && <small>{mode} view preview</small>}</div></div>
     <div className="timelineCard">
-      {loading ? <div className="scheduleLoading">Loading rooms and classes...</div> : <div className="timelineScroller"><div className="timelineHeader"><div className="roomHeader">ROOMS <small>{visibleRooms.length} spaces</small></div><div className="hours">{HOURS.map((hour) => <span key={hour}>{hour > 12 ? hour - 12 : hour}{hour < 12 ? " AM" : hour === 12 ? " PM" : " PM"}</span>)}</div></div>
+      {loading ? <div className="scheduleLoading">Loading university rooms and classes...</div> : <div className="timelineScroller"><div className="timelineHeader"><div className="roomHeader">ROOMS <small>{visibleRooms.length} of {allRooms.length} spaces</small></div><div className="hours">{HOURS.map((hour) => <span key={hour}>{hour > 12 ? hour - 12 : hour}{hour < 12 ? " AM" : hour === 12 ? " PM" : " PM"}</span>)}</div></div>
         <div className="timelineBody">{visibleRooms.map((room) => <div className="roomRow" key={room.id}><div className="roomInfo"><b>{room.room_number}</b><small>{room.capacity} seats · {(room.equipment || []).slice(0, 2).join(" · ") || "Flexible room"}</small></div><div className="roomTrack">{HOURS.slice(0, -1).map((hour) => <i key={hour} style={{ left: `${((hour - START_HOUR) / (END_HOUR - START_HOUR)) * 100}%` }} />)}{dayClasses.filter((item) => item.room === room.room_number).map((item, index) => { const position = getTimelinePosition(item.start_time, item.end_time); const palette = colors[item.course] || coursePalette(item.course, index); return <article key={item.id} className={`scheduleBar ${conflicts.has(item.id) ? "conflict" : ""}`} style={{ left: `${position.left}%`, width: `${position.width}%`, background: palette[0], borderLeftColor: palette[1], top: `${conflicts.has(item.id) ? (index % 2) * 39 + 8 : 8}px` }}><div className="barContent"><strong>{item.course}</strong><small>{item.start_time}–{item.end_time}</small><div className="barTags"><span>{item.instructor}</span><span>{item.day}</span></div></div><div className="barActions"><button onClick={() => openEdit(item)}>Edit</button><button onClick={() => deleteClass(item)} aria-label={`Delete ${item.course}`}>×</button></div>{conflicts.has(item.id) && <em className="conflictFlag">Conflict</em>}</article> })}</div></div>)}</div>
       </div>}
     </div>
