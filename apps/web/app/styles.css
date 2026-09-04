@@ -26,6 +26,18 @@ main{background:radial-gradient(circle at 90% -10%,#171536 0,transparent 28rem),
 }
 @media(max-width:420px){.portal nav{grid-template-columns:repeat(6,62px)}.portal h1{font-size:1.4rem}.hero h2{font-size:1.75rem}.hero{padding:22px 18px}.classMeta{grid-template-columns:1fr}.classMeta span+span{margin-top:9px;padding:9px 0 0;border-left:0;border-top:1px solid #303139}.announcementHead .newButton{width:100%;margin-left:0}.noticeActions button{min-height:35px}.confirm>div{display:grid}.confirm button{width:100%}}
 .syncButton{border:0;background:transparent}.syncButton:hover{color:#fff}.classWidget>button{width:100%;margin-top:14px;padding:12px 0 0;border:0;border-top:1px solid #292a31;background:transparent;color:#57a1ff;text-align:left;font-size:.6rem}.classWidget>button span{float:right}
+
+/* Final portal layout guard: merged feature styles must not reposition the shell. */
+@media (min-width:761px){
+ html,body{overflow-x:hidden}
+ .portal{display:grid;grid-template-columns:236px minmax(0,1fr);width:100%;min-height:100vh}
+ .portal>aside{position:sticky;inset:auto;top:0;grid-column:1;grid-row:1;width:auto;min-width:0;height:100vh;margin:0;overflow:hidden}
+ .portal>main{position:relative;inset:auto;grid-column:2;grid-row:1;width:auto;min-width:0;max-width:none;margin:0;overflow:visible}
+ .portal>main>header{position:relative;width:100%}
+ .portal:not(.roomsMode) .hero{position:relative;width:100%;min-width:0;margin:0;overflow:hidden}
+ .portal:not(.roomsMode) .heroShape{position:relative;flex:0 0 280px;width:280px;height:160px;margin:0}
+}
+@media (min-width:761px) and (max-width:1100px){.portal{grid-template-columns:205px minmax(0,1fr)}}
 /* Rooms availability workspace */
 .roomsMode{--room-blue:#24469a;--room-bright:#2463de;--room-ink:#1f2937;--room-muted:#697386;--room-border:#dfe4ec;background:#f5f7fa;color:var(--room-ink)}
 .roomsMode>aside{background:linear-gradient(180deg,#25479a,#203f8b);border-right:0;color:#fff}
