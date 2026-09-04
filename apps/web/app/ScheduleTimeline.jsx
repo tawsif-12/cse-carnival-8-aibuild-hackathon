@@ -35,7 +35,8 @@ export const MOCK_SCHEDULE = [
 ];
 
 function request(path, options) {
-  return fetch(`${API}${path}`, { ...options, headers: { "Content-Type": "application/json", ...(options?.headers || {}) } }).then(async (response) => {
+  const token = typeof window !== "undefined" ? window.localStorage.getItem("campus_token") : null;
+  return fetch(`${API}${path}`, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options?.headers || {}) } }).then(async (response) => {
     const body = await response.json().catch(() => null);
     if (!response.ok) throw new Error(body?.error || "Request failed");
     return body;
