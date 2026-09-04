@@ -11,6 +11,7 @@ import { schedules } from "./routes/schedules";
 import { overview } from "./routes/overview";
 import { workspace } from "./routes/workspace";
 import { agent } from "./agent";
+import { auth } from "./routes/auth";
 
 const app = express();
 const configuredOrigins = process.env.WEB_ORIGIN?.split(",").map((origin) => origin.trim()).filter(Boolean);
@@ -26,6 +27,7 @@ app.get("/health", asyncRoute(async (_request, response) => {
   await db.$queryRaw`SELECT 1`;
   response.json({ status: "ok", database: "sqlite", connected: true });
 }));
+app.use("/auth", auth);
 app.use("/schedules", schedules);
 app.use("/overview", overview);
 app.use("/workspace", workspace);
@@ -51,6 +53,7 @@ async function shutdown() {
     process.exit(0);
   });
 }
+
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
 start().catch(async (error) => {

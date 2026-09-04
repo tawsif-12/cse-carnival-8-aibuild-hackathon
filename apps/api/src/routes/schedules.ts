@@ -2,6 +2,7 @@ import { Router } from "express";
 import { scheduleSchema } from "@campus-os/contracts";
 import { db } from "../db";
 import { asyncRoute, HttpError, parse } from "../http";
+import { requireRoles } from "../auth";
 
 export const schedules = Router();
 async function validateSchedule(data: { day?: string; start_time?: string; end_time?: string; room?: string }, excludeId?: string) {
@@ -18,11 +19,22 @@ schedules.get("/", asyncRoute(async (req, res) => {
   const course = typeof req.query.course === "string" ? req.query.course : undefined;
   res.json(await db.schedule.findMany({ where: { day, course: course ? { contains: course } : undefined }, orderBy: [{ day: "asc" }, { start_time: "asc" }] }));
 }));
-schedules.post("/", asyncRoute(async (req, res) => { const data=parse(scheduleSchema,req.body);await validateSchedule(data);res.status(201).json(await db.schedule.create({data})) }));
-schedules.patch("/:id", asyncRoute(async (req, res) => { const id=String(req.params.id),patch=parse(scheduleSchema.omit({id:true}).partial(),req.body),current=await db.schedule.findUnique({where:{id}});if(!current)throw new HttpError(404,"Schedule not found");const data={...current,...patch};await validateSchedule(data,id);res.json(await db.schedule.update({where:{id},data:patch})) }));
-schedules.put("/:id", asyncRoute(async (req, res) => {
+schedules.post("/", requireRoles("admin"), asyncRoute(async (req, res) => {
+  const data = parse(scheduleSchema, req.body);
+  await validateSchedule(data);
+  res.status(201).json(await db.schedule.create({ data }));
+}));
+schedules.patch("/:id", requireRoles("admin"), asyncRoute(async (req, res) => {
+  const id = String(req.params.id);
+  const patch = parse(scheduleSchema.omit({ id: true }).partial(), req.body);
+  const current = await db.schedule.findUnique({ where: { id } });
+  if (!current) throw new HttpError(404, "Schedule not found");
+  await validateSchedule({ ...current, ...patch }, id);
+  res.json(await db.schedule.update({ where: { id }, data: patch }));
+}));
+schedules.put("/:id", requireRoles("admin"), asyncRoute(async (req, res) => {
   const data = parse(scheduleSchema, { ...req.body, id: String(req.params.id) });
   await validateSchedule(data, String(req.params.id));
   res.json(await db.schedule.update({ where: { id: String(req.params.id) }, data }));
 }));
-schedules.delete("/:id", asyncRoute(async (req, res) => res.json(await db.schedule.delete({ where: { id: String(req.params.id) } }))));
+schedules.delete("/:id", requireRoles("admin"), asyncRoute(async (req, res) => res.json(await db.schedule.delete({ where: { id: String(req.params.id) } }))));
