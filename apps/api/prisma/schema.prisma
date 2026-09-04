@@ -16,6 +16,7 @@ model User {
   department    String?
   academic_year Int?
   semester      Int?
+  section       String?
   created_at    DateTime @default(now())
   taught_courses CourseOffering[] @relation("OfferingTeacher")
   memberships   CourseMember[]
@@ -31,13 +32,14 @@ model CourseOffering {
   department    String
   academic_year Int
   semester      Int
+  section       String
   teacher_id    String?
   teacher       User? @relation("OfferingTeacher", fields: [teacher_id], references: [id], onDelete: SetNull)
   members       CourseMember[]
   lectures      CourseLecture[]
   announcements CohortAnnouncement[]
 
-  @@unique([code, department, academic_year, semester])
+  @@unique([code, department, academic_year, semester, section])
   @@index([department, academic_year, semester])
 }
 
@@ -72,6 +74,7 @@ model CohortAnnouncement {
   department    String
   academic_year Int
   semester      Int
+  section       String?
   course_id     String?
   course        CourseOffering? @relation(fields: [course_id], references: [id], onDelete: Cascade)
   author_id     String
@@ -93,6 +96,10 @@ model Schedule {
   room       String
   instructor String
   section    String
+  department String?
+  academic_year Int?
+  semester Int?
+  teacher_id String?
 
   @@index([day, start_time])
   @@index([course])
@@ -118,6 +125,8 @@ model Booking {
   start_time String
   end_time   String
   purpose    String
+  user_id    String?
+  status     String @default("approved")
   room_id    String
   room       Room   @relation(fields: [room_id], references: [id], onDelete: Cascade)
 
@@ -137,6 +146,9 @@ model Event {
   capacity      Int
   registered    Int
   status        String
+  department    String?
+  academic_year Int?
+  semester      Int?
   registrations Registration[]
 
   @@index([date, start_time])
@@ -161,6 +173,12 @@ model Announcement {
   priority  String
   posted_by String
   expires   String
+  department String?
+  academic_year Int?
+  semester Int?
+  section String?
+  course String?
+  author_id String?
 
   @@index([date])
   @@index([priority])
@@ -177,6 +195,10 @@ model Assignment {
   submission_platform String
   status              String
   marks               Float
+  department          String?
+  academic_year       Int?
+  semester            Int?
+  teacher_id          String?
 
   @@index([deadline])
   @@index([course, status])

@@ -6,13 +6,14 @@ import { db } from "../db";
 import { asyncRoute, HttpError, parse } from "../http";
 import { serializeRoom } from "../serializers";
 import { requireRoles } from "../auth";
+import { authenticatedUser } from "../access";
 
 export const rooms = Router();
 const roomInput = roomSchema.omit({ bookings: true });
 const bookingInput = bookingSchema.omit({ booking_id: true });
 const include = { bookings: { orderBy: [{ date: "asc" as const }, { start_time: "asc" as const }] } };
 
-rooms.get("/", requireRoles("admin"), asyncRoute(async (req, res) => {
+rooms.get("/", requireRoles("student", "teacher", "cr", "admin"), asyncRoute(async (req, res) => {
   const type = typeof req.query.type === "string" ? req.query.type : undefined;
   const capacity = req.query.capacity ? parse(z.coerce.number().int().positive(), req.query.capacity) : undefined;
   const equipment = typeof req.query.equipment === "string" ? req.query.equipment.split(",").filter(Boolean) : [];
@@ -42,7 +43,8 @@ for (const method of ["patch", "put"] as const) rooms[method]("/:id", requireRol
 rooms.delete("/:id", requireRoles("admin"), asyncRoute(async (req, res) => {
   res.json(serializeRoom(await db.room.delete({ where: { id: String(req.params.id) }, include })));
 }));
-rooms.post("/:id/book", requireRoles("admin"), asyncRoute(async (req, res) => {
+rooms.post("/:id/book", requireRoles("teacher", "cr", "admin"), asyncRoute(async (req, res) => {
+  const user = await authenticatedUser(req);
   const data = parse(bookingInput, req.body);
   if (data.start_time >= data.end_time) throw new HttpError(400, "end_time must be after start_time");
   const room = await db.$transaction(async (tx) => {
@@ -51,14 +53,16 @@ rooms.post("/:id/book", requireRoles("admin"), asyncRoute(async (req, res) => {
     if (target.status !== "available") throw new HttpError(409, "Room is unavailable");
     const conflict = await tx.booking.findFirst({ where: { room_id: target.id, date: data.date, start_time: { lt: data.end_time }, end_time: { gt: data.start_time } } });
     if (conflict) throw new HttpError(409, "Booking overlaps an existing booking");
-    await tx.booking.create({ data: { ...data, booking_id: `bk-${randomUUID()}`, room_id: target.id } });
+    await tx.booking.create({ data: { ...data, booked_by: user.name, user_id: user.id, status: user.role === "cr" ? "requested" : "approved", booking_id: `bk-${randomUUID()}`, room_id: target.id } });
     return tx.room.findUniqueOrThrow({ where: { id: target.id }, include });
   });
   res.status(201).json(serializeRoom(room));
 }));
-rooms.delete("/:id/bookings/:booking_id", requireRoles("admin"), asyncRoute(async (req, res) => {
+rooms.delete("/:id/bookings/:booking_id", requireRoles("teacher", "cr", "admin"), asyncRoute(async (req, res) => {
+  const user = await authenticatedUser(req);
   const booking = await db.booking.findFirst({ where: { booking_id: String(req.params.booking_id), room_id: String(req.params.id) } });
   if (!booking) throw new HttpError(404, "Booking not found for this room");
+  if (user.role !== "admin" && booking.user_id !== user.id) throw new HttpError(403, "You can cancel only your own booking");
   await db.booking.delete({ where: { booking_id: booking.booking_id } });
   res.json(serializeRoom(await db.room.findUniqueOrThrow({ where: { id: String(req.params.id) }, include })));
 }));

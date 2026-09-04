@@ -1,97 +1,1729 @@
 "use client";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { Announcement, Assignment, Event, Room, Schedule } from "@campus-os/contracts";
+import type {
+  Announcement,
+  Assignment,
+  Event,
+  Room,
+  Schedule,
+} from "@campus-os/contracts";
 import { PortalSection, type PortalView, type Role } from "./sections";
 import CohortDashboard from "./CohortDashboard";
 
-const API=process.env.NEXT_PUBLIC_API_URL??"http://localhost:4000";
-type Data={schedules:Schedule[];assignments:Assignment[];events:Event[];announcements:Announcement[];rooms:Room[]};
-type OverviewData={next_class:Schedule|null;due_soon:Assignment[];urgent_announcement:Announcement|null;upcoming_events:Event[];counts:{schedules:number;assignments:number;rooms:number;events:number;announcements:number};updated_at:string};
-type UserSession={id:string;name:string;email:string;role:Role;department:string|null;academic_year:number|null;semester:number|null};
-const initial:Data={schedules:[],assignments:[],events:[],announcements:[],rooms:[]};
-const today=new Date(),iso=today.toISOString().slice(0,10),day=today.toLocaleDateString("en-US",{weekday:"long"});
-const dateLabel=today.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
-function sessionHeader():Record<string,string>{const token=typeof window!=="undefined"?localStorage.getItem("campus_token"):null;return token?{Authorization:`Bearer ${token}`}:{}}
-async function api<T>(path:string,options:RequestInit|undefined,_role:Role):Promise<T>{const response=await fetch(API+path,{...options,headers:{"Content-Type":"application/json",...sessionHeader(),...options?.headers}});const body=await response.json();if(!response.ok)throw new Error(body.error??"Request failed");return body}
-
-export default function Home(){
- const [role,setRole]=useState<Role>("student"),[session,setSession]=useState<UserSession|null>(null),[authReady,setAuthReady]=useState(false),[view,setView]=useState<PortalView>("overview"),[data,setData]=useState(initial),[dashboard,setDashboard]=useState<OverviewData|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[toast,setToast]=useState(""),[showExpired,setShowExpired]=useState(false),[editor,setEditor]=useState<Announcement|null|"new">(null),[deleting,setDeleting]=useState<Announcement|null>(null);
- async function load(){setLoading(true);try{const events=await api<Event[]>("/events",undefined,role);if(role==="admin"){const [schedules,assignments,announcements,rooms,overview]=await Promise.all([api<Schedule[]>("/schedules",undefined,role),api<Assignment[]>("/assignments",undefined,role),api<Announcement[]>("/announcements?include_expired=true",undefined,role),api<Room[]>("/rooms",undefined,role),api<OverviewData>("/overview",undefined,role)]);setData({schedules,assignments,events,announcements,rooms});setDashboard(overview)}else setData({...initial,events});setError("")}catch(e){setError((e as Error).message)}finally{setLoading(false)}}
- useEffect(()=>{const token=localStorage.getItem("campus_token");if(!token){setAuthReady(true);return}fetch(`${API}/auth/me`,{headers:{Authorization:`Bearer ${token}`}}).then(async response=>{if(!response.ok)throw new Error();const user=await response.json() as UserSession;setSession(user);setRole(user.role)}).catch(()=>localStorage.removeItem("campus_token")).finally(()=>setAuthReady(true))},[]);
- useEffect(()=>{if(session)load()},[role,session?.id]);useEffect(()=>{if(!toast)return;const timer=setTimeout(()=>setToast(""),2800);return()=>clearTimeout(timer)},[toast]);
- const nextClass=useMemo(()=>{const week=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],now=new Date(),currentDay=now.getDay(),currentTime=now.toTimeString().slice(0,5);return data.schedules.map(item=>{const targetDay=week.indexOf(item.day),daysAhead=(targetDay-currentDay+7)%7,alreadyStarted=daysAhead===0&&item.end_time<=currentTime;return{item,offset:(alreadyStarted?7:daysAhead)*1440+Number(item.start_time.slice(0,2))*60+Number(item.start_time.slice(3))}}).sort((a,b)=>a.offset-b.offset)[0]?.item},[data.schedules]);
- const dueSoon=useMemo(()=>data.assignments.filter(x=>!["submitted","graded"].includes(x.status)&&x.deadline>=iso).sort((a,b)=>a.deadline.localeCompare(b.deadline)).slice(0,3),[data.assignments]);
- const urgent=useMemo(()=>data.announcements.filter(x=>x.priority==="high"&&x.expires>=iso).sort((a,b)=>b.date.localeCompare(a.date))[0],[data.announcements]);
- const upcoming=useMemo(()=>data.events.filter(x=>x.date>=iso&&!["completed","cancelled"].includes(x.status)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,3),[data.events]);
- const notices=useMemo(()=>data.announcements.filter(x=>showExpired||x.expires>=iso).sort((a,b)=>b.date.localeCompare(a.date)),[data.announcements,showExpired]);
- async function save(value:Announcement){try{const isNew=editor==="new";const result=await api<Announcement>(`/announcements${isNew?"":`/${value.id}`}`,{method:isNew?"POST":"PATCH",body:JSON.stringify(isNew?value:{title:value.title,body:value.body,date:value.date,priority:value.priority,posted_by:value.posted_by,expires:value.expires})},role);setData(d=>({...d,announcements:isNew?[result,...d.announcements]:d.announcements.map(x=>x.id===result.id?result:x)}));setEditor(null);setToast(isNew?"Announcement published":"Announcement updated")}catch(e){setError((e as Error).message)}}
- async function remove(){if(!deleting)return;try{await api(`/announcements/${deleting.id}`,{method:"DELETE"},role);setData(d=>({...d,announcements:d.announcements.filter(x=>x.id!==deleting.id)}));setDeleting(null);setToast("Announcement deleted")}catch(e){setError((e as Error).message)}}
- const nav:[PortalView,string,string][]=[['overview','⌂','Overview'],['schedule','◷','Schedule'],['rooms','▦','Rooms'],['events','◇','Events'],['announcements','◉','Announcements'],['assignments','✓','Assignments']];
- const titles:Record<PortalView,[string,string]>={overview:["Good morning, My Student","Here’s what’s happening around your campus today."],schedule:["Weekly schedule","Your Sunday–Thursday academic timetable."],rooms:["Campus rooms","Find and reserve the right space."],events:["Campus events","Discover events and manage your registrations."],announcements:["Campus announcements","Official updates, notices, and everything you shouldn’t miss."],assignments:["Assignments","Stay ahead of coursework and deadlines."],chat:["Ask CampusOS","A live AI assistant that can answer and act."]};
- if(!authReady)return <div className="authLoading"><div className="authMark">C</div><p>Opening CampusOS…</p></div>;
- if(!session)return <AuthPage complete={(user,token)=>{localStorage.setItem("campus_token",token);setSession(user);setRole(user.role);setView("overview")}}/>;
- return <div className={`portal ${view==="rooms"?"roomsMode":""}`}><aside><div className="logo"><span>C</span><b>CampusOS</b></div><p className="navLabel">{roleLabel(role).toUpperCase()} PORTAL</p><nav>{nav.map(([key,icon,label])=><button key={key} className={view===key?"active":""} onClick={()=>setView(key)}><i>{icon}</i>{label}{key==="announcements"&&<em>{data.announcements.filter(x=>x.priority==="high"&&x.expires>=iso).length}</em>}</button>)}</nav>{role==="student"&&<button className={`agent ${view==="chat"?"active":""}`} onClick={()=>setView("chat")}><span>✦</span><div><b>Ask CampusOS</b><small>AI campus assistant</small></div><i>→</i></button>}<div className="profile"><span>{roleInitial(role)}</span><div><b>{session.name}</b><small>{roleLabel(role)}</small></div><button className="logoutButton" onClick={()=>{localStorage.removeItem("campus_token");setSession(null);setData(initial);setEditor(null)}}>Log out</button></div></aside>
- <main><header><div><p className="crumb">CampusOS / <b>{roleLabel(role)} / {view}</b></p><h1>{view==="overview"?`${roleLabel(role)} dashboard`:titles[view][0]}</h1><p>{view==="overview"?`Campus information and tools for the ${roleLabel(role).toLowerCase()} role.`:titles[view][1]}</p></div><div className="context"><span>Today</span><b>{dateLabel}</b><i className={['Friday','Saturday'].includes(day)?'weekend':''}>{['Friday','Saturday'].includes(day)?'Weekend':'Campus day'}</i></div></header>
- {error&&<div className="error"><span>!</span><p><b>Something went wrong</b>{error}</p><button onClick={()=>setError("")}>×</button></div>}{toast&&<div className="toast"><span>✓</span>{toast}</div>}
- {loading?<Loading/>:
-  view==="overview"?<CohortDashboard role={role} notify={setToast}/>:
-  view==="schedule"?<PortalSection view={view} notify={setToast} role={role}/>:
-  view==="rooms"?<Rooms rooms={data.rooms} schedules={data.schedules} role={role} change={rooms=>setData(current=>({...current,rooms}))} notify={setToast} fail={setError}/>:
-  view==="announcements"?<Announcements items={notices} total={data.announcements.length} showExpired={showExpired} toggle={()=>setShowExpired(x=>!x)} add={()=>setEditor("new")} edit={setEditor} remove={setDeleting} canEdit={role==="admin"} canDelete={role==="admin"}/>:
-  <PortalSection view={view} notify={setToast} role={role}/>}
- </main>{editor&&<AnnouncementForm item={editor==="new"?undefined:editor} role={role} close={()=>setEditor(null)} save={save}/>} {deleting&&<Confirm item={deleting} close={()=>setDeleting(null)} confirm={remove}/>}</div>
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+type Data = {
+  schedules: Schedule[];
+  assignments: Assignment[];
+  events: Event[];
+  announcements: Announcement[];
+  rooms: Room[];
+};
+type OverviewData = {
+  next_class: Schedule | null;
+  due_soon: Assignment[];
+  urgent_announcement: Announcement | null;
+  upcoming_events: Event[];
+  counts: {
+    schedules: number;
+    assignments: number;
+    rooms: number;
+    events: number;
+    announcements: number;
+  };
+  updated_at: string;
+};
+type UserSession = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  department: string | null;
+  academic_year: number | null;
+  semester: number | null;
+  section: string | null;
+};
+const initial: Data = {
+  schedules: [],
+  assignments: [],
+  events: [],
+  announcements: [],
+  rooms: [],
+};
+const today = new Date(),
+  iso = today.toISOString().slice(0, 10),
+  day = today.toLocaleDateString("en-US", { weekday: "long" });
+const dateLabel = today.toLocaleDateString("en-US", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+});
+function sessionHeader(): Record<string, string> {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("campus_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
-function AuthPage({complete}:{complete(user:UserSession,token:string):void}){
- const [role,setRole]=useState<Role>("student"),[mode,setMode]=useState<"login"|"signup">("login"),[name,setName]=useState(""),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[department,setDepartment]=useState("CSE"),[academicYear,setAcademicYear]=useState("1"),[semester,setSemester]=useState("1"),[error,setError]=useState(""),[busy,setBusy]=useState(false);
- const details:Record<Role,[string,string,string]>={admin:["Admin","Full campus operations","AD"],teacher:["Teacher","Assigned courses and lectures","TC"],representative:["Class Representative","Course announcements","CR"],student:["Student","Cohort courses and updates","ST"]};
- async function submit(event:FormEvent){event.preventDefault();setBusy(true);setError("");try{const response=await fetch(`${API}/auth/${mode}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,email,password,role,department,academic_year:Number(academicYear),semester:Number(semester)})});const body=await response.json();if(!response.ok)throw new Error(body.error??"Authentication failed");complete(body.user,body.token)}catch(reason){setError((reason as Error).message)}finally{setBusy(false)}}
- return <main className="authPage"><section className="authBrand"><div className="authLogo"><span>C</span><b>CampusOS</b></div><div><span className="authEyebrow">ONE CAMPUS · FOUR EXPERIENCES</span><h1>Your campus,<br/><em>in one calm place.</em></h1><p>Choose your authorized portal and sign in to continue.</p></div><div className="authTrust"><span>✓</span><p><b>Cohort-protected access</b><small>Your account controls the department, year, semester, and courses you can see.</small></p></div></section><section className="authPanel"><div className="authCard"><div className="authHeading"><small>WELCOME TO CAMPUSOS</small><h2>{mode==="login"?"Sign in to your portal":"Create your account"}</h2><p>Select the role assigned to you.</p></div><div className="roleCards">{(Object.keys(details) as Role[]).map(value=><button type="button" className={role===value?"selected":""} onClick={()=>{setRole(value);setError("")}} key={value}><span>{details[value][2]}</span><div><b>{details[value][0]}</b><small>{details[value][1]}</small></div><i>{role===value?"✓":""}</i></button>)}</div><form className="authForm" onSubmit={submit}><div className="authRoleTitle"><span>{details[role][2]}</span><div><small>{roleLabel(role).toUpperCase()} {mode.toUpperCase()}</small><b>{mode==="login"?`Welcome back, ${details[role][0]}`:`Join as ${details[role][0]}`}</b></div></div>{mode==="signup"&&<label>Full name<input required minLength={2} value={name} onChange={event=>setName(event.target.value)} placeholder="Your full name" autoComplete="name"/></label>}{mode==="signup"&&(role==="student"||role==="representative")&&<><label>Department<input required value={department} onChange={event=>setDepartment(event.target.value.toUpperCase())} placeholder="CSE"/></label><label>Academic year<select value={academicYear} onChange={event=>setAcademicYear(event.target.value)}>{[1,2,3,4,5].map(value=><option key={value}>{value}</option>)}</select></label><label>Semester<select value={semester} onChange={event=>setSemester(event.target.value)}>{[1,2,3].map(value=><option key={value}>{value}</option>)}</select></label></>}<label>Email address<input required type="email" value={email} onChange={event=>setEmail(event.target.value)} placeholder="name@campus.edu" autoComplete="email"/></label><label>Password<input required minLength={8} type="password" value={password} onChange={event=>setPassword(event.target.value)} placeholder="At least 8 characters" autoComplete={mode==="login"?"current-password":"new-password"}/></label>{error&&<div className="authError">{error}</div>}<button className="authSubmit" disabled={busy}>{busy?"Please wait…":mode==="login"?`Sign in as ${details[role][0]}`:`Create ${details[role][0]} account`}</button></form><p className="authSwitch">{mode==="login"?"New to CampusOS?":"Already have an account?"}<button onClick={()=>{setMode(mode==="login"?"signup":"login");setError("")}}>{mode==="login"?"Create an account":"Sign in instead"}</button></p></div></section></main>
+async function api<T>(
+  path: string,
+  options: RequestInit | undefined,
+  _role: Role,
+): Promise<T> {
+  const response = await fetch(API + path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...sessionHeader(),
+      ...options?.headers,
+    },
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error ?? "Request failed");
+  return body;
 }
-function roleLabel(role:Role){return role==="representative"?"Class Representative":role[0]!.toUpperCase()+role.slice(1)}
-function roleInitial(role:Role){return role==="representative"?"CR":role==="admin"?"AD":role==="teacher"?"TC":"ST"}
 
-function Overview({nextClass,due,urgent,upcoming,navigate,refresh}:{nextClass?:Schedule;due:Assignment[];urgent?:Announcement;upcoming:Event[];navigate(view:PortalView):void;refresh():void}){return <><section className="hero"><div><span className="kicker">YOUR DAY AT A GLANCE</span><h2>Stay ahead,<br/><em>stress less.</em></h2><p>CampusOS brings your classes, work, and campus updates into one calm view.</p></div><div className="heroShape"><span>✦</span><i></i><b>{day.slice(0,3)}</b></div></section><div className="sectionTitle"><div><h2>Today’s overview</h2><p>Live information from across campus</p></div><button className="sync syncButton" onClick={refresh} title="Refresh overview"><i/>Refresh data</button></div><section className="widgets">
- <article className="widget classWidget"><div className="widgetTop"><span className="icon purple">◷</span><small>NEXT CLASS</small></div>{nextClass?<><h3>{nextClass.course}</h3><p>{nextClass.title}</p><div className="classMeta"><span><small>DAY &amp; TIME</small><b>{nextClass.day}, {nextClass.start_time} – {nextClass.end_time}</b></span><span><small>ROOM</small><b>{nextClass.room}</b></span></div><div className="instructorCard"><span>{nextClass.instructor.split(' ').map(x=>x[0]).slice(0,2).join('')}</span><div><small>INSTRUCTOR</small><b>{nextClass.instructor}</b></div></div><button onClick={()=>navigate("schedule")}>Open full schedule <span>→</span></button></>:<><Empty text="No classes scheduled"/><button onClick={()=>navigate("schedule")}>Open schedule <span>→</span></button></>}</article>
- <article className="widget dueWidget"><div className="widgetTop"><span className="icon coral">✓</span><small>DUE SOON</small><b>{due.length}</b></div><h3>Assignments</h3>{due.length?due.map(x=><div className="miniRow" key={x.id}><span><b>{x.title}</b><small>{x.course}</small></span><Due date={x.deadline}/></div>):<Empty text="Nothing due soon"/>}<button onClick={()=>navigate("assignments")}>View all assignments <span>→</span></button></article>
- <article className="widget noticeWidget"><div className="widgetTop"><span className="icon red">!</span><small>IMPORTANT NOTICE</small></div>{urgent?<><span className="priority">HIGH PRIORITY</span><h3>{urgent.title}</h3><p>{urgent.body}</p><div className="posted"><span>{urgent.posted_by.slice(0,2).toUpperCase()}</span><small>Posted by<br/><b>{urgent.posted_by}</b></small></div></>:<Empty text="No urgent notices"/>}<button onClick={()=>navigate("announcements")}>Read all announcements <span>→</span></button></article>
- <article className="widget eventsWidget"><div className="widgetTop"><span className="icon mint">◇</span><small>COMING UP</small></div><h3>Upcoming events</h3>{upcoming.length?upcoming.map(x=><div className="eventRow" key={x.id}><span className="eventDate"><b>{new Date(x.date+'T00:00:00').getDate()}</b><small>{new Date(x.date+'T00:00:00').toLocaleDateString('en-US',{month:'short'})}</small></span><span><b>{x.name}</b><small>{x.start_time} · {x.venue}</small></span></div>):<Empty text="No upcoming events"/>}<button onClick={()=>navigate("events")}>Explore all events <span>→</span></button></article>
- </section></>}
-
-const roomDays=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-const roomTimes=Array.from({length:11},(_,index)=>`${String(index+8).padStart(2,"0")}:00`);
-function localDate(value:string){return new Date(`${value}T12:00:00`)}
-function dateKey(value:Date){return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,"0")}-${String(value.getDate()).padStart(2,"0")}`}
-function Rooms({rooms,schedules,role,change,notify,fail}:{rooms:Room[];schedules:Schedule[];role:Role;change(x:Room[]):void;notify(x:string):void;fail(x:string):void}){
- const [roomId,setRoomId]=useState(rooms[0]?.id??""),[selectedDate,setSelectedDate]=useState(iso),[capacity,setCapacity]=useState("all"),[selectedSlot,setSelectedSlot]=useState(""),[purpose,setPurpose]=useState("Class or campus activity"),[busy,setBusy]=useState(false),[roomEditor,setRoomEditor]=useState<Room|"new"|null>(null);
- const eligible=useMemo(()=>rooms.filter(room=>capacity==="all"||room.capacity>=Number(capacity)),[rooms,capacity]);
- useEffect(()=>{const firstEligible=eligible[0];if(firstEligible&&!eligible.some(room=>room.id===roomId))setRoomId(firstEligible.id)},[eligible,roomId]);
- const room=eligible.find(item=>item.id===roomId)??eligible[0]??rooms[0];
- const week=useMemo(()=>{const anchor=localDate(selectedDate);const monday=new Date(anchor);monday.setDate(anchor.getDate()-((anchor.getDay()+6)%7));return roomDays.map((name,index)=>{const date=new Date(monday);date.setDate(monday.getDate()+index);return{name,date,dateKey:dateKey(date)}})},[selectedDate]);
- function occupied(dayName:string,cellDate:string,start:string){if(!room)return false;const end=`${String(Number(start.slice(0,2))+1).padStart(2,"0")}:00`;const scheduled=schedules.some(item=>item.room===room.room_number&&item.day===dayName&&item.start_time<end&&item.end_time>start);const booked=room.bookings.some(item=>item.date===cellDate&&item.start_time<end&&item.end_time>start);return room.status==="unavailable"||scheduled||booked}
- async function book(){if(!room||!selectedSlot)return;const start=selectedSlot.slice(11),end=`${String(Number(start.slice(0,2))+1).padStart(2,"0")}:00`;setBusy(true);try{const fresh=await api<Room>(`/rooms/${room.id}/book`,{method:"POST",body:JSON.stringify({booked_by:"Campus Admin",date:selectedSlot.slice(0,10),start_time:start,end_time:end,purpose})},role);change(rooms.map(item=>item.id===fresh.id?fresh:item));setSelectedSlot("");notify("Room booked successfully")}catch(error){fail((error as Error).message)}finally{setBusy(false)}}
- async function saveRoom(value:Room){try{const isNew=roomEditor==="new",fresh=await api<Room>(`/rooms${isNew?"":`/${value.id}`}`,{method:isNew?"POST":"PATCH",body:JSON.stringify(value)},role);change(isNew?[...rooms,fresh].sort((a,b)=>a.room_number.localeCompare(b.room_number)):rooms.map(item=>item.id===fresh.id?fresh:item));setRoomId(fresh.id);setRoomEditor(null);notify(isNew?"Room added":"Room updated")}catch(error){fail((error as Error).message)}}
- async function removeRoom(){if(!room||!confirm(`Delete room ${room.room_number}?`))return;try{await api(`/rooms/${room.id}`,{method:"DELETE"},role);change(rooms.filter(item=>item.id!==room.id));setRoomId(rooms.find(item=>item.id!==room.id)?.id??"");notify("Room removed")}catch(error){fail((error as Error).message)}}
- if(!rooms.length)return <><div className="blank roomBlank"><span>▦</span><h2>No rooms available</h2><p>Add rooms to the database to see the availability calendar.</p>{role==="admin"&&<button className="newButton" onClick={()=>setRoomEditor("new")}>+ Add room</button>}</div>{roomEditor&&<RoomForm close={()=>setRoomEditor(null)} save={saveRoom}/>}</>;
- return <section className="roomsPage">
-  <div className="roomFilters">
-   <label>Choose room<select value={room?.id} onChange={event=>{setRoomId(event.target.value);setSelectedSlot("")}}>{eligible.map(item=><option value={item.id} key={item.id}>{item.room_number} · {item.type}</option>)}</select></label>
-   <label>Choose date<input type="date" value={selectedDate} onChange={event=>{setSelectedDate(event.target.value);setSelectedSlot("")}}/></label>
-   <label>Minimum capacity<select value={capacity} onChange={event=>setCapacity(event.target.value)}><option value="all">All capacities</option><option value="30">30+ people</option><option value="40">40+ people</option><option value="50">50+ people</option><option value="60">60+ people</option></select></label>{role==="admin"&&<button className="newButton roomAdd" onClick={()=>setRoomEditor("new")}>+ Add room</button>}
-  </div>
-  <div className="roomLayout">
-   <div className="availabilityCard">
-    <div className="calendarTop"><div><h2>Weekly availability</h2><p>{week[0]!.date.toLocaleDateString("en-US",{month:"long",day:"numeric"})} – {week[6]!.date.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</p></div><div className="roomLegend"><span><i className="availableDot"/>Available</span><span><i className="occupiedDot"/>Occupied</span></div></div>
-    <div className="roomTableWrap"><div className="roomTable" role="grid"><div className="roomCell corner">TIME</div>{week.map(item=><div className="roomCell dayHead" key={item.name}><b>{item.name.slice(0,3)}</b><small>{item.date.getDate()}</small></div>)}{roomTimes.map(time=><div className="roomRow" key={time}><div className="roomCell timeCell">{time}</div>{week.map(item=>{const isOccupied=occupied(item.name,item.dateKey,time),key=`${item.dateKey}-${time}`,active=selectedSlot===key;return <button aria-label={`${item.name} ${time}, ${isOccupied?"occupied":"available"}`} className={`roomCell slot ${isOccupied?"occupied":"available"} ${active?"selected":""}`} key={key} disabled={isOccupied} onClick={()=>setSelectedSlot(key)}>{isOccupied?<span>Occupied</span>:active?<span>Selected</span>:null}</button>})}</div>)}</div></div>
-   </div>
-   <aside className="roomDetails"><div className="detailHeading"><span>▦</span><div><small>ROOM DETAILS</small><h2>{room?.room_number}</h2></div></div>{role==="admin"&&<div className="roomAdminActions"><button onClick={()=>room&&setRoomEditor(room)}>Edit room</button><button onClick={removeRoom}>Delete</button></div>}<div className="detailStats"><div><small>TYPE</small><b>{room?.type}</b></div><div><small>FLOOR</small><b>Level {room?.floor}</b></div></div><div className="capacityLine"><span>♙</span><div><small>CAPACITY</small><b>{room?.capacity} people</b></div></div><div className="facilityTitle"><small>FACILITIES</small><em>{room?.equipment.length}</em></div><div className="facilityList">{room?.equipment.map(item=><span key={item}><i>{equipmentIcon(item)}</i>{item}</span>)}</div>{selectedSlot?<><div className="selectionNote"><span>✓</span><div><small>SELECTED SLOT</small><b>{new Date(`${selectedSlot.slice(0,10)}T12:00:00`).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})} at {selectedSlot.slice(11)}</b></div></div>{role==="admin"?<div className="roomBookingAction"><label>Purpose<input value={purpose} onChange={event=>setPurpose(event.target.value)}/></label><button className="newButton" disabled={busy||!purpose.trim()} onClick={book}>{busy?"Booking…":"Book selected hour"}</button></div>:<p className="accessNote">Students and representatives can view availability but cannot book rooms.</p>}</>:<p className="detailHint">Select an available time to inspect it.</p>}</aside>
-  </div>{roomEditor&&<RoomForm item={roomEditor==="new"?undefined:roomEditor} close={()=>setRoomEditor(null)} save={saveRoom}/>}
- </section>
+export default function Home() {
+  const [role, setRole] = useState<Role>("student"),
+    [session, setSession] = useState<UserSession | null>(null),
+    [authReady, setAuthReady] = useState(false),
+    [view, setView] = useState<PortalView>("overview"),
+    [data, setData] = useState(initial),
+    [dashboard, setDashboard] = useState<OverviewData | null>(null),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState(""),
+    [toast, setToast] = useState(""),
+    [showExpired, setShowExpired] = useState(false),
+    [editor, setEditor] = useState<Announcement | null | "new">(null),
+    [deleting, setDeleting] = useState<Announcement | null>(null);
+  async function load() {
+    setLoading(true);
+    try {
+      const [schedules, assignments, events, announcements, rooms] =
+        await Promise.all([
+          api<Schedule[]>("/schedules", undefined, role),
+          api<Assignment[]>("/assignments", undefined, role),
+          api<Event[]>("/events", undefined, role),
+          api<Announcement[]>(
+            "/announcements?include_expired=true",
+            undefined,
+            role,
+          ),
+          api<Room[]>("/rooms", undefined, role),
+        ]);
+      setData({ schedules, assignments, events, announcements, rooms });
+      if (role === "admin")
+        setDashboard(await api<OverviewData>("/overview", undefined, role));
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    const token = localStorage.getItem("campus_token");
+    if (!token) {
+      setAuthReady(true);
+      return;
+    }
+    fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        const user = (await response.json()) as UserSession;
+        setSession(user);
+        setRole(user.role);
+      })
+      .catch(() => localStorage.removeItem("campus_token"))
+      .finally(() => setAuthReady(true));
+  }, []);
+  useEffect(() => {
+    if (session) load();
+  }, [role, session?.id]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 2800);
+    return () => clearTimeout(timer);
+  }, [toast]);
+  const nextClass = useMemo(() => {
+    const week = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+      ],
+      now = new Date(),
+      currentDay = now.getDay(),
+      currentTime = now.toTimeString().slice(0, 5);
+    return data.schedules
+      .map((item) => {
+        const targetDay = week.indexOf(item.day),
+          daysAhead = (targetDay - currentDay + 7) % 7,
+          alreadyStarted = daysAhead === 0 && item.end_time <= currentTime;
+        return {
+          item,
+          offset:
+            (alreadyStarted ? 7 : daysAhead) * 1440 +
+            Number(item.start_time.slice(0, 2)) * 60 +
+            Number(item.start_time.slice(3)),
+        };
+      })
+      .sort((a, b) => a.offset - b.offset)[0]?.item;
+  }, [data.schedules]);
+  const dueSoon = useMemo(
+    () =>
+      data.assignments
+        .filter(
+          (x) =>
+            !["submitted", "graded"].includes(x.status) && x.deadline >= iso,
+        )
+        .sort((a, b) => a.deadline.localeCompare(b.deadline))
+        .slice(0, 3),
+    [data.assignments],
+  );
+  const urgent = useMemo(
+    () =>
+      data.announcements
+        .filter((x) => x.priority === "high" && x.expires >= iso)
+        .sort((a, b) => b.date.localeCompare(a.date))[0],
+    [data.announcements],
+  );
+  const upcoming = useMemo(
+    () =>
+      data.events
+        .filter(
+          (x) =>
+            x.date >= iso && !["completed", "cancelled"].includes(x.status),
+        )
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(0, 3),
+    [data.events],
+  );
+  const notices = useMemo(
+    () =>
+      data.announcements
+        .filter((x) => showExpired || x.expires >= iso)
+        .sort((a, b) => b.date.localeCompare(a.date)),
+    [data.announcements, showExpired],
+  );
+  async function save(value: Announcement) {
+    try {
+      const isNew = editor === "new";
+      const result = await api<Announcement>(
+        `/announcements${isNew ? "" : `/${value.id}`}`,
+        {
+          method: isNew ? "POST" : "PATCH",
+          body: JSON.stringify(
+            isNew
+              ? value
+              : {
+                  title: value.title,
+                  body: value.body,
+                  date: value.date,
+                  priority: value.priority,
+                  posted_by: value.posted_by,
+                  expires: value.expires,
+                },
+          ),
+        },
+        role,
+      );
+      setData((d) => ({
+        ...d,
+        announcements: isNew
+          ? [result, ...d.announcements]
+          : d.announcements.map((x) => (x.id === result.id ? result : x)),
+      }));
+      setEditor(null);
+      setToast(isNew ? "Announcement published" : "Announcement updated");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  async function remove() {
+    if (!deleting) return;
+    try {
+      await api(`/announcements/${deleting.id}`, { method: "DELETE" }, role);
+      setData((d) => ({
+        ...d,
+        announcements: d.announcements.filter((x) => x.id !== deleting.id),
+      }));
+      setDeleting(null);
+      setToast("Announcement deleted");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  const allNav: [PortalView, string, string][] = [
+    ["overview", "⌂", "Overview"],
+    ["schedule", "◷", "Schedule"],
+    ["rooms", "▦", "Rooms"],
+    ["events", "◇", "Events"],
+    ["announcements", "◉", "Announcements"],
+    ["assignments", "✓", "Assignments"],
+  ];
+  allNav.push(["users", "U", "Users"]);
+  const roleViews: Record<Role, PortalView[]> = {
+    student: ["overview", "schedule", "rooms", "events", "announcements", "assignments"],
+    teacher: [
+      "overview",
+      "schedule",
+      "rooms",
+      "events",
+      "announcements",
+      "assignments",
+      "chat",
+    ],
+    cr: ["overview", "schedule", "rooms", "events", "announcements", "assignments", "chat"],
+    admin: [
+      "overview",
+      "schedule",
+      "rooms",
+      "events",
+      "announcements",
+      "assignments",
+      "chat",
+      "users",
+    ],
+  };
+  const nav = allNav.filter(([key]) => roleViews[role].includes(key));
+  const titles: Record<PortalView, [string, string]> = {
+    overview: [
+      "Good morning, My Student",
+      "Here’s what’s happening around your campus today.",
+    ],
+    schedule: ["Weekly schedule", "Your Sunday–Thursday academic timetable."],
+    rooms: ["Campus rooms", "Find and reserve the right space."],
+    events: ["Campus events", "Discover events and manage your registrations."],
+    announcements: [
+      "Campus announcements",
+      "Official updates, notices, and everything you shouldn’t miss.",
+    ],
+    assignments: ["Assignments", "Stay ahead of coursework and deadlines."],
+    chat: ["Ask CampusOS", "A live AI assistant that can answer and act."],
+    users: ["Users management", "Create accounts and assign roles, cohorts, teachers, and students."],
+  };
+  if (!authReady)
+    return (
+      <div className="authLoading">
+        <div className="authMark">C</div>
+        <p>Opening CampusOS…</p>
+      </div>
+    );
+  if (!session)
+    return (
+      <AuthPage
+        complete={(user, token) => {
+          localStorage.setItem("campus_token", token);
+          setSession(user);
+          setRole(user.role);
+          setView("overview");
+        }}
+      />
+    );
+  return (
+    <div className={`portal ${view === "rooms" ? "roomsMode" : ""}`}>
+      <aside>
+        <div className="logo">
+          <span>C</span>
+          <b>CampusOS</b>
+        </div>
+        <p className="navLabel">{roleLabel(role).toUpperCase()} PORTAL</p>
+        <nav>
+          {nav.map(([key, icon, label]) => (
+            <button
+              key={key}
+              className={view === key ? "active" : ""}
+              onClick={() => setView(key)}
+            >
+              <i>{icon}</i>
+              {label}
+              {key === "announcements" && (
+                <em>
+                  {
+                    data.announcements.filter(
+                      (x) => x.priority === "high" && x.expires >= iso,
+                    ).length
+                  }
+                </em>
+              )}
+            </button>
+          ))}
+        </nav>
+        {
+          <button
+            className={`agent ${view === "chat" ? "active" : ""}`}
+            onClick={() => setView("chat")}
+          >
+            <span>✦</span>
+            <div>
+              <b>Ask CampusOS</b>
+              <small>AI campus assistant</small>
+            </div>
+            <i>→</i>
+          </button>
+        }
+        <div className="profile">
+          <span>{roleInitial(role)}</span>
+          <div>
+            <b>{session.name}</b>
+            <small>{roleLabel(role)}</small>
+          </div>
+          <button
+            className="logoutButton"
+            onClick={() => {
+              localStorage.removeItem("campus_token");
+              setSession(null);
+              setData(initial);
+              setEditor(null);
+            }}
+          >
+            Log out
+          </button>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <p className="crumb">
+              CampusOS /{" "}
+              <b>
+                {roleLabel(role)} / {view}
+              </b>
+            </p>
+            <h1>
+              {view === "overview"
+                ? `${roleLabel(role)} dashboard`
+                : titles[view][0]}
+            </h1>
+            <p>
+              {view === "overview"
+                ? `Campus information and tools for the ${roleLabel(role).toLowerCase()} role.`
+                : titles[view][1]}
+            </p>
+          </div>
+          <div className="context">
+            <span>Today</span>
+            <b>{dateLabel}</b>
+            <i
+              className={["Friday", "Saturday"].includes(day) ? "weekend" : ""}
+            >
+              {["Friday", "Saturday"].includes(day) ? "Weekend" : "Campus day"}
+            </i>
+          </div>
+        </header>
+        {error && (
+          <div className="error">
+            <span>!</span>
+            <p>
+              <b>Something went wrong</b>
+              {error}
+            </p>
+            <button onClick={() => setError("")}>×</button>
+          </div>
+        )}
+        {toast && (
+          <div className="toast">
+            <span>✓</span>
+            {toast}
+          </div>
+        )}
+        {loading ? (
+          <Loading />
+        ) : view === "overview" ? (
+          <CohortDashboard role={role} notify={setToast} />
+        ) : view === "users" ? (
+          <CohortDashboard role={role} notify={setToast} />
+        ) : view === "schedule" ? (
+          <PortalSection view={view} notify={setToast} role={role} />
+        ) : view === "rooms" ? (
+          <Rooms
+            rooms={data.rooms}
+            schedules={data.schedules}
+            role={role}
+            change={(rooms) => setData((current) => ({ ...current, rooms }))}
+            notify={setToast}
+            fail={setError}
+          />
+        ) : view === "announcements" ? (
+          <Announcements
+            items={notices}
+            total={data.announcements.length}
+            showExpired={showExpired}
+            toggle={() => setShowExpired((x) => !x)}
+            add={() => setEditor("new")}
+            edit={setEditor}
+            remove={setDeleting}
+            canEdit={role === "admin" || role === "cr"}
+            canDelete={role === "admin" || role === "cr"}
+          />
+        ) : (
+          <PortalSection view={view} notify={setToast} role={role} />
+        )}
+      </main>
+      {editor && (
+        <AnnouncementForm
+          item={editor === "new" ? undefined : editor}
+          role={role}
+          close={() => setEditor(null)}
+          save={save}
+        />
+      )}{" "}
+      {deleting && (
+        <Confirm
+          item={deleting}
+          close={() => setDeleting(null)}
+          confirm={remove}
+        />
+      )}
+    </div>
+  );
 }
-function RoomForm({item,close,save}:{item?:Room;close():void;save(x:Room):void}){const [value,setValue]=useState<Room>(item??{id:`room-${Date.now()}`,room_number:"",type:"classroom",capacity:40,equipment:["whiteboard","projector","AC"],floor:7,status:"available",bookings:[]}),[equipment,setEquipment]=useState((item?.equipment??["whiteboard","projector","AC"]).join(", "));function submit(e:FormEvent){e.preventDefault();save({...value,equipment:equipment.split(",").map(item=>item.trim()).filter(Boolean)})}return <div className="backdrop" onMouseDown={event=>event.target===event.currentTarget&&close()}><form className="modal" onSubmit={submit}><div className="modalTitle"><div><small>ROOM MANAGEMENT</small><h2>{item?"Edit room":"Add room"}</h2></div><button type="button" onClick={close}>×</button></div><div className="formGrid"><label>Room number<input required value={value.room_number} onChange={event=>setValue({...value,room_number:event.target.value})}/></label><label>Type<select value={value.type} onChange={event=>setValue({...value,type:event.target.value as Room['type']})}><option>classroom</option><option>lab</option><option>seminar</option></select></label><label>Capacity<input required type="number" min="1" value={value.capacity} onChange={event=>setValue({...value,capacity:Number(event.target.value)})}/></label><label>Floor<input required type="number" value={value.floor} onChange={event=>setValue({...value,floor:Number(event.target.value)})}/></label><label>Status<select value={value.status} onChange={event=>setValue({...value,status:event.target.value as Room['status']})}><option>available</option><option>unavailable</option></select></label><label className="wide">Equipment (comma separated)<input required value={equipment} onChange={event=>setEquipment(event.target.value)}/></label></div><div className="modalActions"><button type="button" onClick={close}>Cancel</button><button className="newButton">Save room</button></div></form></div>}
-function equipmentIcon(item:string){const value=item.toLowerCase();if(value.includes("projector")||value.includes("camera"))return "▣";if(value.includes("computer"))return "⌘";if(value.includes("ac"))return "≋";if(value.includes("microphone"))return "◉";if(value.includes("board"))return "◇";return "•"}
+function AuthPage({
+  complete,
+}: {
+  complete(user: UserSession, token: string): void;
+}) {
+  const [role, setRole] = useState<Role>("student"),
+    [mode, setMode] = useState<"login" | "signup">("login"),
+    [name, setName] = useState(""),
+    [email, setEmail] = useState(""),
+    [password, setPassword] = useState(""),
+    [department, setDepartment] = useState("CSE"),
+    [academicYear, setAcademicYear] = useState("1"),
+    [semester, setSemester] = useState("1"),
+    [section, setSection] = useState("A"),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const details: Record<Role, [string, string, string]> = {
+    admin: ["Admin", "Full campus operations", "AD"],
+    teacher: ["Teacher", "Assigned courses and lectures", "TC"],
+    cr: ["Class Representative", "Class announcements and requests", "CR"],
+    student: ["Student", "Semester courses and updates", "ST"],
+  };
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${API}/auth/${mode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          role,
+          department,
+          academic_year: Number(academicYear),
+          semester: Number(semester),
+          section,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Authentication failed");
+      complete(body.user, body.token);
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <main className="authPage">
+      <section className="authBrand">
+        <div className="authLogo">
+          <span>C</span>
+          <b>CampusOS</b>
+        </div>
+        <div>
+          <span className="authEyebrow">ONE CAMPUS · FOUR EXPERIENCES</span>
+          <h1>
+            Your campus,
+            <br />
+            <em>in one calm place.</em>
+          </h1>
+          <p>Choose your authorized portal and sign in to continue.</p>
+        </div>
+        <div className="authTrust">
+          <span>✓</span>
+          <p>
+            <b>Cohort-protected access</b>
+            <small>
+              Your account controls the department, year, semester, and courses
+              you can see.
+            </small>
+          </p>
+        </div>
+      </section>
+      <section className="authPanel">
+        <div className="authCard">
+          <div className="authHeading">
+            <small>WELCOME TO CAMPUSOS</small>
+            <h2>
+              {mode === "login"
+                ? "Sign in to your portal"
+                : "Create your account"}
+            </h2>
+            <p>Select the role assigned to you.</p>
+          </div>
+          <div className="roleCards">
+            {(mode === "signup"
+              ? (["student"] as Role[])
+              : (Object.keys(details) as Role[])
+            ).map((value) => (
+              <button
+                type="button"
+                className={role === value ? "selected" : ""}
+                onClick={() => {
+                  setRole(value);
+                  setError("");
+                }}
+                key={value}
+              >
+                <span>{details[value][2]}</span>
+                <div>
+                  <b>{details[value][0]}</b>
+                  <small>{details[value][1]}</small>
+                </div>
+                <i>{role === value ? "✓" : ""}</i>
+              </button>
+            ))}
+          </div>
+          <form className="authForm" onSubmit={submit}>
+            <div className="authRoleTitle">
+              <span>{details[role][2]}</span>
+              <div>
+                <small>
+                  {roleLabel(role).toUpperCase()} {mode.toUpperCase()}
+                </small>
+                <b>
+                  {mode === "login"
+                    ? `Welcome back, ${details[role][0]}`
+                    : `Join as ${details[role][0]}`}
+                </b>
+              </div>
+            </div>
+            {mode === "signup" && (
+              <label>
+                Full name
+                <input
+                  required
+                  minLength={2}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Your full name"
+                  autoComplete="name"
+                />
+              </label>
+            )}
+            {mode === "signup" && (role === "student" || role === "cr") && (
+              <>
+                <label>
+                  Department
+                  <input
+                    required
+                    value={department}
+                    onChange={(event) =>
+                      setDepartment(event.target.value.toUpperCase())
+                    }
+                    placeholder="CSE"
+                  />
+                </label>
+                <label>
+                  Academic year
+                  <select
+                    value={academicYear}
+                    onChange={(event) => setAcademicYear(event.target.value)}
+                  >
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Semester
+                  <select
+                    value={semester}
+                    onChange={(event) => setSemester(event.target.value)}
+                  >
+                    {[1, 2, 3].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Section
+                  <input
+                    required
+                    value={section}
+                    onChange={(event) =>
+                      setSection(event.target.value.toUpperCase())
+                    }
+                    placeholder="A"
+                  />
+                </label>
+              </>
+            )}
+            <label>
+              Email address
+              <input
+                required
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@campus.edu"
+                autoComplete="email"
+              />
+            </label>
+            <label>
+              Password
+              <input
+                required
+                minLength={8}
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="At least 8 characters"
+                autoComplete={
+                  mode === "login" ? "current-password" : "new-password"
+                }
+              />
+            </label>
+            {error && <div className="authError">{error}</div>}
+            <button className="authSubmit" disabled={busy}>
+              {busy
+                ? "Please wait…"
+                : mode === "login"
+                  ? `Sign in as ${details[role][0]}`
+                  : `Create ${details[role][0]} account`}
+            </button>
+          </form>
+          <p className="authSwitch">
+            {mode === "login" ? "New to CampusOS?" : "Already have an account?"}
+            <button
+              onClick={() => {
+                if(mode === "login") setRole("student");
+                setMode(mode === "login" ? "signup" : "login");
+                setError("");
+              }}
+            >
+              {mode === "login" ? "Create an account" : "Sign in instead"}
+            </button>
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}
+function roleLabel(role: Role) {
+  return role === "cr"
+    ? "Class Representative"
+    : role[0]!.toUpperCase() + role.slice(1);
+}
+function roleInitial(role: Role) {
+  return role === "cr"
+    ? "CR"
+    : role === "admin"
+      ? "AD"
+      : role === "teacher"
+        ? "TC"
+        : "ST";
+}
 
-function Announcements({items,total,showExpired,toggle,add,edit,remove,canEdit,canDelete}:{items:Announcement[];total:number;showExpired:boolean;toggle():void;add():void;edit(x:Announcement):void;remove(x:Announcement):void;canEdit:boolean;canDelete:boolean}){return <><div className="announcementHead"><div><span className="count">{items.length}</span><p>Showing current announcements<br/><small>{total-items.length} expired hidden</small></p></div><label className="toggle"><input type="checkbox" checked={showExpired} onChange={toggle}/><span/>Show expired</label>{canEdit&&<button className="newButton" onClick={add}>+ New announcement</button>}</div>{!canEdit&&<div className="roleNotice">Read-only view · Only admins and student representatives can publish announcements.</div>}{items.length?<section className="feed">{items.map(item=>{const expired=item.expires<iso;return <article className={`notice ${item.priority} ${expired?'expired':''}`} key={item.id}><div className="noticeAccent"/><div className="noticeBody"><div className="noticeTop"><span className={`priority ${item.priority}`}>{item.priority} priority</span><time>{new Date(item.date+'T00:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</time>{expired&&<span className="expiredTag">Expired</span>}</div><h2>{item.title}</h2><p>{item.body}</p><footer><div className="author"><span>{item.posted_by.split(' ').map(x=>x[0]).slice(0,2).join('')}</span><p><small>POSTED BY</small><b>{item.posted_by}</b></p></div><div className="noticeActions"><small>Expires {item.expires}</small>{canEdit&&<button onClick={()=>edit(item)}>Edit</button>}{canDelete&&<button className="delete" onClick={()=>remove(item)}>Delete</button>}</div></footer></div></article>})}</section>:<div className="blank"><span>◉</span><h2>No announcements here</h2><p>Try showing expired notices or publish a new announcement.</p></div>}</>}
+function Overview({
+  nextClass,
+  due,
+  urgent,
+  upcoming,
+  navigate,
+  refresh,
+}: {
+  nextClass?: Schedule;
+  due: Assignment[];
+  urgent?: Announcement;
+  upcoming: Event[];
+  navigate(view: PortalView): void;
+  refresh(): void;
+}) {
+  return (
+    <>
+      <section className="hero">
+        <div>
+          <span className="kicker">YOUR DAY AT A GLANCE</span>
+          <h2>
+            Stay ahead,
+            <br />
+            <em>stress less.</em>
+          </h2>
+          <p>
+            CampusOS brings your classes, work, and campus updates into one calm
+            view.
+          </p>
+        </div>
+        <div className="heroShape">
+          <span>✦</span>
+          <i></i>
+          <b>{day.slice(0, 3)}</b>
+        </div>
+      </section>
+      <div className="sectionTitle">
+        <div>
+          <h2>Today’s overview</h2>
+          <p>Live information from across campus</p>
+        </div>
+        <button
+          className="sync syncButton"
+          onClick={refresh}
+          title="Refresh overview"
+        >
+          <i />
+          Refresh data
+        </button>
+      </div>
+      <section className="widgets">
+        <article className="widget classWidget">
+          <div className="widgetTop">
+            <span className="icon purple">◷</span>
+            <small>NEXT CLASS</small>
+          </div>
+          {nextClass ? (
+            <>
+              <h3>{nextClass.course}</h3>
+              <p>{nextClass.title}</p>
+              <div className="classMeta">
+                <span>
+                  <small>DAY &amp; TIME</small>
+                  <b>
+                    {nextClass.day}, {nextClass.start_time} –{" "}
+                    {nextClass.end_time}
+                  </b>
+                </span>
+                <span>
+                  <small>ROOM</small>
+                  <b>{nextClass.room}</b>
+                </span>
+              </div>
+              <div className="instructorCard">
+                <span>
+                  {nextClass.instructor
+                    .split(" ")
+                    .map((x) => x[0])
+                    .slice(0, 2)
+                    .join("")}
+                </span>
+                <div>
+                  <small>INSTRUCTOR</small>
+                  <b>{nextClass.instructor}</b>
+                </div>
+              </div>
+              <button onClick={() => navigate("schedule")}>
+                Open full schedule <span>→</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <Empty text="No classes scheduled" />
+              <button onClick={() => navigate("schedule")}>
+                Open schedule <span>→</span>
+              </button>
+            </>
+          )}
+        </article>
+        <article className="widget dueWidget">
+          <div className="widgetTop">
+            <span className="icon coral">✓</span>
+            <small>DUE SOON</small>
+            <b>{due.length}</b>
+          </div>
+          <h3>Assignments</h3>
+          {due.length ? (
+            due.map((x) => (
+              <div className="miniRow" key={x.id}>
+                <span>
+                  <b>{x.title}</b>
+                  <small>{x.course}</small>
+                </span>
+                <Due date={x.deadline} />
+              </div>
+            ))
+          ) : (
+            <Empty text="Nothing due soon" />
+          )}
+          <button onClick={() => navigate("assignments")}>
+            View all assignments <span>→</span>
+          </button>
+        </article>
+        <article className="widget noticeWidget">
+          <div className="widgetTop">
+            <span className="icon red">!</span>
+            <small>IMPORTANT NOTICE</small>
+          </div>
+          {urgent ? (
+            <>
+              <span className="priority">HIGH PRIORITY</span>
+              <h3>{urgent.title}</h3>
+              <p>{urgent.body}</p>
+              <div className="posted">
+                <span>{urgent.posted_by.slice(0, 2).toUpperCase()}</span>
+                <small>
+                  Posted by
+                  <br />
+                  <b>{urgent.posted_by}</b>
+                </small>
+              </div>
+            </>
+          ) : (
+            <Empty text="No urgent notices" />
+          )}
+          <button onClick={() => navigate("announcements")}>
+            Read all announcements <span>→</span>
+          </button>
+        </article>
+        <article className="widget eventsWidget">
+          <div className="widgetTop">
+            <span className="icon mint">◇</span>
+            <small>COMING UP</small>
+          </div>
+          <h3>Upcoming events</h3>
+          {upcoming.length ? (
+            upcoming.map((x) => (
+              <div className="eventRow" key={x.id}>
+                <span className="eventDate">
+                  <b>{new Date(x.date + "T00:00:00").getDate()}</b>
+                  <small>
+                    {new Date(x.date + "T00:00:00").toLocaleDateString(
+                      "en-US",
+                      { month: "short" },
+                    )}
+                  </small>
+                </span>
+                <span>
+                  <b>{x.name}</b>
+                  <small>
+                    {x.start_time} · {x.venue}
+                  </small>
+                </span>
+              </div>
+            ))
+          ) : (
+            <Empty text="No upcoming events" />
+          )}
+          <button onClick={() => navigate("events")}>
+            Explore all events <span>→</span>
+          </button>
+        </article>
+      </section>
+    </>
+  );
+}
 
-function AnnouncementForm({item,role,close,save}:{item?:Announcement;role:Role;close():void;save(x:Announcement):void}){const [value,setValue]=useState<Announcement>(item??{id:`ann-${Date.now()}`,title:"",body:"",date:iso,priority:"medium",posted_by:role==="admin"?"Campus Administration":"Student Representative",expires:iso});function submit(e:FormEvent){e.preventDefault();save(value)}return <div className="backdrop" onMouseDown={e=>e.target===e.currentTarget&&close()}><form className="modal" onSubmit={submit}><div className="modalTitle"><div><small>{item?'UPDATE NOTICE':'PUBLISH NOTICE'}</small><h2>{item?'Edit announcement':'New announcement'}</h2></div><button type="button" onClick={close}>×</button></div><div className="formGrid"><label className="wide">Title<input required value={value.title} onChange={e=>setValue({...value,title:e.target.value})}/></label><label className="wide">Announcement body<textarea required value={value.body} onChange={e=>setValue({...value,body:e.target.value})}/></label><label>Priority<select value={value.priority} onChange={e=>setValue({...value,priority:e.target.value as Announcement['priority']})}><option>high</option><option>medium</option><option>low</option></select></label><label>Posted by<input required value={value.posted_by} onChange={e=>setValue({...value,posted_by:e.target.value})}/></label><label>Posted date<input type="date" required value={value.date} onChange={e=>setValue({...value,date:e.target.value})}/></label><label>Expires<input type="date" required value={value.expires} min={value.date} onChange={e=>setValue({...value,expires:e.target.value})}/></label></div><div className="modalActions"><button type="button" onClick={close}>Cancel</button><button className="newButton">{item?'Save changes':'Publish announcement'}</button></div></form></div>}
-function Confirm({item,close,confirm}:{item:Announcement;close():void;confirm():void}){return <div className="backdrop"><div className="confirm"><span>!</span><h2>Delete announcement?</h2><p>“{item.title}” will be permanently removed.</p><div><button onClick={close}>Keep it</button><button className="deleteConfirm" onClick={confirm}>Delete announcement</button></div></div></div>}
-function Loading(){return <div className="loading"><span/><span/><span/><p>Loading your campus…</p></div>};function Empty({text}:{text:string}){return <div className="empty">{text}</div>};function Due({date}:{date:string}){const days=Math.ceil((new Date(date+'T00:00:00').getTime()-new Date(iso+'T00:00:00').getTime())/864e5);return <em className={days<=2?'soon':''}>{days===0?'Today':days===1?'Tomorrow':`${days} days`}</em>}
+const roomDays = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+const roomTimes = Array.from(
+  { length: 11 },
+  (_, index) => `${String(index + 8).padStart(2, "0")}:00`,
+);
+function localDate(value: string) {
+  return new Date(`${value}T12:00:00`);
+}
+function dateKey(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+function Rooms({
+  rooms,
+  schedules,
+  role,
+  change,
+  notify,
+  fail,
+}: {
+  rooms: Room[];
+  schedules: Schedule[];
+  role: Role;
+  change(x: Room[]): void;
+  notify(x: string): void;
+  fail(x: string): void;
+}) {
+  const [roomId, setRoomId] = useState(rooms[0]?.id ?? ""),
+    [selectedDate, setSelectedDate] = useState(iso),
+    [capacity, setCapacity] = useState("all"),
+    [selectedSlot, setSelectedSlot] = useState(""),
+    [purpose, setPurpose] = useState("Class or campus activity"),
+    [busy, setBusy] = useState(false),
+    [roomEditor, setRoomEditor] = useState<Room | "new" | null>(null);
+  const eligible = useMemo(
+    () =>
+      rooms.filter(
+        (room) => capacity === "all" || room.capacity >= Number(capacity),
+      ),
+    [rooms, capacity],
+  );
+  useEffect(() => {
+    const firstEligible = eligible[0];
+    if (firstEligible && !eligible.some((room) => room.id === roomId))
+      setRoomId(firstEligible.id);
+  }, [eligible, roomId]);
+  const room =
+    eligible.find((item) => item.id === roomId) ?? eligible[0] ?? rooms[0];
+  const week = useMemo(() => {
+    const anchor = localDate(selectedDate);
+    const monday = new Date(anchor);
+    monday.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7));
+    return roomDays.map((name, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return { name, date, dateKey: dateKey(date) };
+    });
+  }, [selectedDate]);
+  function occupied(dayName: string, cellDate: string, start: string) {
+    if (!room) return false;
+    const end = `${String(Number(start.slice(0, 2)) + 1).padStart(2, "0")}:00`;
+    const scheduled = schedules.some(
+      (item) =>
+        item.room === room.room_number &&
+        item.day === dayName &&
+        item.start_time < end &&
+        item.end_time > start,
+    );
+    const booked = room.bookings.some(
+      (item) =>
+        item.date === cellDate &&
+        item.start_time < end &&
+        item.end_time > start,
+    );
+    return room.status === "unavailable" || scheduled || booked;
+  }
+  async function book() {
+    if (!room || !selectedSlot) return;
+    const start = selectedSlot.slice(11),
+      end = `${String(Number(start.slice(0, 2)) + 1).padStart(2, "0")}:00`;
+    setBusy(true);
+    try {
+      const fresh = await api<Room>(
+        `/rooms/${room.id}/book`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            booked_by: "Campus Admin",
+            date: selectedSlot.slice(0, 10),
+            start_time: start,
+            end_time: end,
+            purpose,
+          }),
+        },
+        role,
+      );
+      change(rooms.map((item) => (item.id === fresh.id ? fresh : item)));
+      setSelectedSlot("");
+      notify("Room booked successfully");
+    } catch (error) {
+      fail((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveRoom(value: Room) {
+    try {
+      const isNew = roomEditor === "new",
+        fresh = await api<Room>(
+          `/rooms${isNew ? "" : `/${value.id}`}`,
+          { method: isNew ? "POST" : "PATCH", body: JSON.stringify(value) },
+          role,
+        );
+      change(
+        isNew
+          ? [...rooms, fresh].sort((a, b) =>
+              a.room_number.localeCompare(b.room_number),
+            )
+          : rooms.map((item) => (item.id === fresh.id ? fresh : item)),
+      );
+      setRoomId(fresh.id);
+      setRoomEditor(null);
+      notify(isNew ? "Room added" : "Room updated");
+    } catch (error) {
+      fail((error as Error).message);
+    }
+  }
+  async function removeRoom() {
+    if (!room || !confirm(`Delete room ${room.room_number}?`)) return;
+    try {
+      await api(`/rooms/${room.id}`, { method: "DELETE" }, role);
+      change(rooms.filter((item) => item.id !== room.id));
+      setRoomId(rooms.find((item) => item.id !== room.id)?.id ?? "");
+      notify("Room removed");
+    } catch (error) {
+      fail((error as Error).message);
+    }
+  }
+  if (!rooms.length)
+    return (
+      <>
+        <div className="blank roomBlank">
+          <span>▦</span>
+          <h2>No rooms available</h2>
+          <p>Add rooms to the database to see the availability calendar.</p>
+          {role === "admin" && (
+            <button className="newButton" onClick={() => setRoomEditor("new")}>
+              + Add room
+            </button>
+          )}
+        </div>
+        {roomEditor && (
+          <RoomForm close={() => setRoomEditor(null)} save={saveRoom} />
+        )}
+      </>
+    );
+  return (
+    <section className="roomsPage">
+      <div className="roomFilters">
+        <label>
+          Choose room
+          <select
+            value={room?.id}
+            onChange={(event) => {
+              setRoomId(event.target.value);
+              setSelectedSlot("");
+            }}
+          >
+            {eligible.map((item) => (
+              <option value={item.id} key={item.id}>
+                {item.room_number} · {item.type}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Choose date
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(event) => {
+              setSelectedDate(event.target.value);
+              setSelectedSlot("");
+            }}
+          />
+        </label>
+        <label>
+          Minimum capacity
+          <select
+            value={capacity}
+            onChange={(event) => setCapacity(event.target.value)}
+          >
+            <option value="all">All capacities</option>
+            <option value="30">30+ people</option>
+            <option value="40">40+ people</option>
+            <option value="50">50+ people</option>
+            <option value="60">60+ people</option>
+          </select>
+        </label>
+        {role === "admin" && (
+          <button
+            className="newButton roomAdd"
+            onClick={() => setRoomEditor("new")}
+          >
+            + Add room
+          </button>
+        )}
+      </div>
+      <div className="roomLayout">
+        <div className="availabilityCard">
+          <div className="calendarTop">
+            <div>
+              <h2>Weekly availability</h2>
+              <p>
+                {week[0]!.date.toLocaleDateString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                })}{" "}
+                –{" "}
+                {week[6]!.date.toLocaleDateString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </p>
+            </div>
+            <div className="roomLegend">
+              <span>
+                <i className="availableDot" />
+                Available
+              </span>
+              <span>
+                <i className="occupiedDot" />
+                Occupied
+              </span>
+            </div>
+          </div>
+          <div className="roomTableWrap">
+            <div className="roomTable" role="grid">
+              <div className="roomCell corner">TIME</div>
+              {week.map((item) => (
+                <div className="roomCell dayHead" key={item.name}>
+                  <b>{item.name.slice(0, 3)}</b>
+                  <small>{item.date.getDate()}</small>
+                </div>
+              ))}
+              {roomTimes.map((time) => (
+                <div className="roomRow" key={time}>
+                  <div className="roomCell timeCell">{time}</div>
+                  {week.map((item) => {
+                    const isOccupied = occupied(item.name, item.dateKey, time),
+                      key = `${item.dateKey}-${time}`,
+                      active = selectedSlot === key;
+                    return (
+                      <button
+                        aria-label={`${item.name} ${time}, ${isOccupied ? "occupied" : "available"}`}
+                        className={`roomCell slot ${isOccupied ? "occupied" : "available"} ${active ? "selected" : ""}`}
+                        key={key}
+                        disabled={isOccupied}
+                        onClick={() => setSelectedSlot(key)}
+                      >
+                        {isOccupied ? (
+                          <span>Occupied</span>
+                        ) : active ? (
+                          <span>Selected</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <aside className="roomDetails">
+          <div className="detailHeading">
+            <span>▦</span>
+            <div>
+              <small>ROOM DETAILS</small>
+              <h2>{room?.room_number}</h2>
+            </div>
+          </div>
+          {role === "admin" && (
+            <div className="roomAdminActions">
+              <button onClick={() => room && setRoomEditor(room)}>
+                Edit room
+              </button>
+              <button onClick={removeRoom}>Delete</button>
+            </div>
+          )}
+          <div className="detailStats">
+            <div>
+              <small>TYPE</small>
+              <b>{room?.type}</b>
+            </div>
+            <div>
+              <small>FLOOR</small>
+              <b>Level {room?.floor}</b>
+            </div>
+          </div>
+          <div className="capacityLine">
+            <span>♙</span>
+            <div>
+              <small>CAPACITY</small>
+              <b>{room?.capacity} people</b>
+            </div>
+          </div>
+          <div className="facilityTitle">
+            <small>FACILITIES</small>
+            <em>{room?.equipment.length}</em>
+          </div>
+          <div className="facilityList">
+            {room?.equipment.map((item) => (
+              <span key={item}>
+                <i>{equipmentIcon(item)}</i>
+                {item}
+              </span>
+            ))}
+          </div>
+          {selectedSlot ? (
+            <>
+              <div className="selectionNote">
+                <span>✓</span>
+                <div>
+                  <small>SELECTED SLOT</small>
+                  <b>
+                    {new Date(
+                      `${selectedSlot.slice(0, 10)}T12:00:00`,
+                    ).toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    })}{" "}
+                    at {selectedSlot.slice(11)}
+                  </b>
+                </div>
+              </div>
+              {role === "admin" || role === "teacher" || role === "cr" ? (
+                <div className="roomBookingAction">
+                  <label>
+                    Purpose
+                    <input
+                      value={purpose}
+                      onChange={(event) => setPurpose(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    className="newButton"
+                    disabled={busy || !purpose.trim()}
+                    onClick={book}
+                  >
+                    {busy ? "Booking…" : "Book selected hour"}
+                  </button>
+                </div>
+              ) : (
+                <p className="accessNote">
+                  Students can only view availability. Teachers can book rooms,
+                  and CR requests require approval.
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="detailHint">
+              Select an available time to inspect it.
+            </p>
+          )}
+        </aside>
+      </div>
+      {roomEditor && (
+        <RoomForm
+          item={roomEditor === "new" ? undefined : roomEditor}
+          close={() => setRoomEditor(null)}
+          save={saveRoom}
+        />
+      )}
+    </section>
+  );
+}
+function RoomForm({
+  item,
+  close,
+  save,
+}: {
+  item?: Room;
+  close(): void;
+  save(x: Room): void;
+}) {
+  const [value, setValue] = useState<Room>(
+      item ?? {
+        id: `room-${Date.now()}`,
+        room_number: "",
+        type: "classroom",
+        capacity: 40,
+        equipment: ["whiteboard", "projector", "AC"],
+        floor: 7,
+        status: "available",
+        bookings: [],
+      },
+    ),
+    [equipment, setEquipment] = useState(
+      (item?.equipment ?? ["whiteboard", "projector", "AC"]).join(", "),
+    );
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    save({
+      ...value,
+      equipment: equipment
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    });
+  }
+  return (
+    <div
+      className="backdrop"
+      onMouseDown={(event) => event.target === event.currentTarget && close()}
+    >
+      <form className="modal" onSubmit={submit}>
+        <div className="modalTitle">
+          <div>
+            <small>ROOM MANAGEMENT</small>
+            <h2>{item ? "Edit room" : "Add room"}</h2>
+          </div>
+          <button type="button" onClick={close}>
+            ×
+          </button>
+        </div>
+        <div className="formGrid">
+          <label>
+            Room number
+            <input
+              required
+              value={value.room_number}
+              onChange={(event) =>
+                setValue({ ...value, room_number: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            Type
+            <select
+              value={value.type}
+              onChange={(event) =>
+                setValue({ ...value, type: event.target.value as Room["type"] })
+              }
+            >
+              <option>classroom</option>
+              <option>lab</option>
+              <option>seminar</option>
+            </select>
+          </label>
+          <label>
+            Capacity
+            <input
+              required
+              type="number"
+              min="1"
+              value={value.capacity}
+              onChange={(event) =>
+                setValue({ ...value, capacity: Number(event.target.value) })
+              }
+            />
+          </label>
+          <label>
+            Floor
+            <input
+              required
+              type="number"
+              value={value.floor}
+              onChange={(event) =>
+                setValue({ ...value, floor: Number(event.target.value) })
+              }
+            />
+          </label>
+          <label>
+            Status
+            <select
+              value={value.status}
+              onChange={(event) =>
+                setValue({
+                  ...value,
+                  status: event.target.value as Room["status"],
+                })
+              }
+            >
+              <option>available</option>
+              <option>unavailable</option>
+            </select>
+          </label>
+          <label className="wide">
+            Equipment (comma separated)
+            <input
+              required
+              value={equipment}
+              onChange={(event) => setEquipment(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="modalActions">
+          <button type="button" onClick={close}>
+            Cancel
+          </button>
+          <button className="newButton">Save room</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+function equipmentIcon(item: string) {
+  const value = item.toLowerCase();
+  if (value.includes("projector") || value.includes("camera")) return "▣";
+  if (value.includes("computer")) return "⌘";
+  if (value.includes("ac")) return "≋";
+  if (value.includes("microphone")) return "◉";
+  if (value.includes("board")) return "◇";
+  return "•";
+}
+
+function Announcements({
+  items,
+  total,
+  showExpired,
+  toggle,
+  add,
+  edit,
+  remove,
+  canEdit,
+  canDelete,
+}: {
+  items: Announcement[];
+  total: number;
+  showExpired: boolean;
+  toggle(): void;
+  add(): void;
+  edit(x: Announcement): void;
+  remove(x: Announcement): void;
+  canEdit: boolean;
+  canDelete: boolean;
+}) {
+  return (
+    <>
+      <div className="announcementHead">
+        <div>
+          <span className="count">{items.length}</span>
+          <p>
+            Showing current announcements
+            <br />
+            <small>{total - items.length} expired hidden</small>
+          </p>
+        </div>
+        <label className="toggle">
+          <input type="checkbox" checked={showExpired} onChange={toggle} />
+          <span />
+          Show expired
+        </label>
+        {canEdit && (
+          <button className="newButton" onClick={add}>
+            + New announcement
+          </button>
+        )}
+      </div>
+      {!canEdit && (
+        <div className="roleNotice">
+          Read-only view · Only admins and student representatives can publish
+          announcements.
+        </div>
+      )}
+      {items.length ? (
+        <section className="feed">
+          {items.map((item) => {
+            const expired = item.expires < iso;
+            return (
+              <article
+                className={`notice ${item.priority} ${expired ? "expired" : ""}`}
+                key={item.id}
+              >
+                <div className="noticeAccent" />
+                <div className="noticeBody">
+                  <div className="noticeTop">
+                    <span className={`priority ${item.priority}`}>
+                      {item.priority} priority
+                    </span>
+                    <time>
+                      {new Date(item.date + "T00:00:00").toLocaleDateString(
+                        "en-US",
+                        { month: "long", day: "numeric", year: "numeric" },
+                      )}
+                    </time>
+                    {expired && <span className="expiredTag">Expired</span>}
+                  </div>
+                  <h2>{item.title}</h2>
+                  <p>{item.body}</p>
+                  <footer>
+                    <div className="author">
+                      <span>
+                        {item.posted_by
+                          .split(" ")
+                          .map((x) => x[0])
+                          .slice(0, 2)
+                          .join("")}
+                      </span>
+                      <p>
+                        <small>POSTED BY</small>
+                        <b>{item.posted_by}</b>
+                      </p>
+                    </div>
+                    <div className="noticeActions">
+                      <small>Expires {item.expires}</small>
+                      {canEdit && (
+                        <button onClick={() => edit(item)}>Edit</button>
+                      )}
+                      {canDelete && (
+                        <button className="delete" onClick={() => remove(item)}>
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </footer>
+                </div>
+              </article>
+            );
+          })}
+        </section>
+      ) : (
+        <div className="blank">
+          <span>◉</span>
+          <h2>No announcements here</h2>
+          <p>Try showing expired notices or publish a new announcement.</p>
+        </div>
+      )}
+    </>
+  );
+}
+
+function AnnouncementForm({
+  item,
+  role,
+  close,
+  save,
+}: {
+  item?: Announcement;
+  role: Role;
+  close(): void;
+  save(x: Announcement): void;
+}) {
+  const [value, setValue] = useState<Announcement>(
+    item ?? {
+      id: `ann-${Date.now()}`,
+      title: "",
+      body: "",
+      date: iso,
+      priority: "medium",
+      posted_by:
+        role === "admin" ? "Campus Administration" : "Student Representative",
+      expires: iso,
+    },
+  );
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    save(value);
+  }
+  return (
+    <div
+      className="backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && close()}
+    >
+      <form className="modal" onSubmit={submit}>
+        <div className="modalTitle">
+          <div>
+            <small>{item ? "UPDATE NOTICE" : "PUBLISH NOTICE"}</small>
+            <h2>{item ? "Edit announcement" : "New announcement"}</h2>
+          </div>
+          <button type="button" onClick={close}>
+            ×
+          </button>
+        </div>
+        <div className="formGrid">
+          <label className="wide">
+            Title
+            <input
+              required
+              value={value.title}
+              onChange={(e) => setValue({ ...value, title: e.target.value })}
+            />
+          </label>
+          <label className="wide">
+            Announcement body
+            <textarea
+              required
+              value={value.body}
+              onChange={(e) => setValue({ ...value, body: e.target.value })}
+            />
+          </label>
+          <label>
+            Priority
+            <select
+              value={value.priority}
+              onChange={(e) =>
+                setValue({
+                  ...value,
+                  priority: e.target.value as Announcement["priority"],
+                })
+              }
+            >
+              <option>high</option>
+              <option>medium</option>
+              <option>low</option>
+            </select>
+          </label>
+          <label>
+            Posted by
+            <input
+              required
+              value={value.posted_by}
+              onChange={(e) =>
+                setValue({ ...value, posted_by: e.target.value })
+              }
+            />
+          </label>
+          <label>
+            Posted date
+            <input
+              type="date"
+              required
+              value={value.date}
+              onChange={(e) => setValue({ ...value, date: e.target.value })}
+            />
+          </label>
+          <label>
+            Expires
+            <input
+              type="date"
+              required
+              value={value.expires}
+              min={value.date}
+              onChange={(e) => setValue({ ...value, expires: e.target.value })}
+            />
+          </label>
+        </div>
+        <div className="modalActions">
+          <button type="button" onClick={close}>
+            Cancel
+          </button>
+          <button className="newButton">
+            {item ? "Save changes" : "Publish announcement"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+function Confirm({
+  item,
+  close,
+  confirm,
+}: {
+  item: Announcement;
+  close(): void;
+  confirm(): void;
+}) {
+  return (
+    <div className="backdrop">
+      <div className="confirm">
+        <span>!</span>
+        <h2>Delete announcement?</h2>
+        <p>“{item.title}” will be permanently removed.</p>
+        <div>
+          <button onClick={close}>Keep it</button>
+          <button className="deleteConfirm" onClick={confirm}>
+            Delete announcement
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function Loading() {
+  return (
+    <div className="loading">
+      <span />
+      <span />
+      <span />
+      <p>Loading your campus…</p>
+    </div>
+  );
+}
+function Empty({ text }: { text: string }) {
+  return <div className="empty">{text}</div>;
+}
+function Due({ date }: { date: string }) {
+  const days = Math.ceil(
+    (new Date(date + "T00:00:00").getTime() -
+      new Date(iso + "T00:00:00").getTime()) /
+      864e5,
+  );
+  return (
+    <em className={days <= 2 ? "soon" : ""}>
+      {days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days} days`}
+    </em>
+  );
+}

@@ -1,8 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { HttpError } from "./http";
+import { db } from "./db";
 
-export const roles = ["admin", "teacher", "representative", "student"] as const;
+export const roles = ["admin", "teacher", "cr", "student"] as const;
 export type Role = typeof roles[number];
 export type Session = { id: string; name: string; email: string; role: Role; exp: number };
 
@@ -34,11 +35,27 @@ export function getSession(request: Request): Session {
 export function getRole(request: Request): Role { return getSession(request).role; }
 
 export function requireRoles(...allowed: Role[]) {
-  return (request: Request, _response: Response, next: NextFunction) => {
+  return async (request: Request, _response: Response, next: NextFunction) => {
     try {
-      const role = getRole(request);
-      if (!allowed.includes(role)) throw new HttpError(403, `The ${role} role cannot perform this action`);
+      const session = getSession(request),
+        account = await db.user.findUnique({
+          where: { id: session.id },
+          select: { role: true },
+        });
+      if (!account || account.role !== session.role)
+        throw new HttpError(
+          401,
+          "Your account or role changed; please sign in again",
+        );
+      const role = session.role;
+      if (!allowed.includes(role))
+        throw new HttpError(
+          403,
+          `The ${role} role cannot perform this action`,
+        );
       next();
-    } catch (error) { next(error); }
+    } catch (error) {
+      next(error);
+    }
   };
 }

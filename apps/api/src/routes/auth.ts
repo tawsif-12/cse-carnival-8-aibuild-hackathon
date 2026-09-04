@@ -8,13 +8,11 @@ import { asyncRoute, HttpError, parse } from "../http";
 
 const scrypt = promisify(scryptCallback);
 const credentials = z.object({ email: z.string().email().transform(value => value.toLowerCase()), password: z.string().min(8).max(128) });
-const signup = credentials.extend({ name: z.string().min(2).max(80), role: z.enum(roles), department: z.string().min(2).max(30).optional(), academic_year: z.coerce.number().int().min(1).max(8).optional(), semester: z.coerce.number().int().min(1).max(3).optional() }).superRefine((value, context) => {
-  if (["student", "representative"].includes(value.role) && (!value.department || !value.academic_year || !value.semester)) context.addIssue({ code: "custom", message: "Department, academic year, and semester are required for students and representatives" });
-});
+const signup = credentials.extend({ name: z.string().min(2).max(80), role: z.literal("student"), department: z.string().min(2).max(30), academic_year: z.coerce.number().int().min(1).max(8), semester: z.coerce.number().int().min(1).max(3), section: z.string().min(1).max(10) });
 export const auth = Router();
-type StoredUser = { id: string; name: string; email: string; role: string; password_hash: string; department: string | null; academic_year: number | null; semester: number | null };
+type StoredUser = { id: string; name: string; email: string; role: string; password_hash: string; department: string | null; academic_year: number | null; semester: number | null; section: string | null };
 
-async function hashPassword(password: string) {
+export async function hashPassword(password: string) {
   const salt = randomUUID();
   const hash = await scrypt(password, salt, 64) as Buffer;
   return `${salt}:${hash.toString("hex")}`;
@@ -26,14 +24,14 @@ async function verifyPassword(password: string, stored: string) {
   const expected = Buffer.from(expectedHex, "hex");
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
-const publicUser = (user: StoredUser) => ({ id: user.id, name: user.name, email: user.email, role: user.role, department: user.department, academic_year: user.academic_year, semester: user.semester });
+const publicUser = (user: StoredUser) => ({ id: user.id, name: user.name, email: user.email, role: user.role, department: user.department, academic_year: user.academic_year, semester: user.semester, section: user.section });
 
 auth.post("/signup", asyncRoute(async (request, response) => {
   const input = parse(signup, request.body);
   const existing = await db.$queryRaw<StoredUser[]>`SELECT * FROM User WHERE email = ${input.email} LIMIT 1`;
   if (existing.length) throw new HttpError(409, "An account with this email already exists");
-  const user: StoredUser = { id: `usr-${randomUUID()}`, name: input.name, email: input.email, role: input.role, password_hash: await hashPassword(input.password), department: input.department ?? null, academic_year: input.academic_year ?? null, semester: input.semester ?? null };
-  await db.$executeRaw`INSERT INTO User (id, name, email, password_hash, role, department, academic_year, semester) VALUES (${user.id}, ${user.name}, ${user.email}, ${user.password_hash}, ${user.role}, ${user.department}, ${user.academic_year}, ${user.semester})`;
+  const user: StoredUser = { id: `usr-${randomUUID()}`, name: input.name, email: input.email, role: input.role, password_hash: await hashPassword(input.password), department: input.department, academic_year: input.academic_year, semester: input.semester, section: input.section };
+  await db.$executeRaw`INSERT INTO User (id, name, email, password_hash, role, department, academic_year, semester, section) VALUES (${user.id}, ${user.name}, ${user.email}, ${user.password_hash}, ${user.role}, ${user.department}, ${user.academic_year}, ${user.semester}, ${user.section})`;
   response.status(201).json({ user: publicUser(user), token: createToken(user) });
 }));
 auth.post("/login", asyncRoute(async (request, response) => {

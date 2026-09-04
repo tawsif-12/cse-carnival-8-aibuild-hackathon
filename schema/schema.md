@@ -1,5 +1,15 @@
 # CampusOS — Data Schema Reference
 
+## RBAC and academic scope
+
+Authenticated users have `role` (`student|teacher|cr|admin`), `department`, `academic_year`, `semester`, and `section`. Teachers connect to course offerings through `teacher_id`; students and CRs are explicitly assigned through `CourseMember`.
+
+Schedules and assignments contain department/year/semester and teacher scope; schedules also contain section. Announcements can target a department, year, semester, section, and course. Event scope is nullable: all-null means university-wide, while populated fields restrict visibility to that cohort.
+
+API authorization uses the signed-in user and these stored relationships, never a role or identity supplied by the browser request body.
+
+---
+
 All seed data lives in the `data/` folder as JSON files. Below are the exact field names and types for each system.
 
 ---
