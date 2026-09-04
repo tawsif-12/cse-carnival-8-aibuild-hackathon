@@ -13,6 +13,17 @@ const courseInclude = {
   lectures: { orderBy: { created_at: "desc" as const } },
   _count: { select: { members: true } },
 };
+const adminCourseInclude = {
+  ...courseInclude,
+  members: {
+    include: {
+      user: {
+        select: { id: true, name: true, email: true, role: true },
+      },
+    },
+    orderBy: { id: "asc" as const },
+  },
+};
 
 portal.get(
   "/dashboard",
@@ -56,7 +67,7 @@ portal.get(
     const [courses, announcements, eventCount, userCount] = await Promise.all([
       db.courseOffering.findMany({
         where: courseWhere,
-        include: courseInclude,
+        include: user.role === "admin" ? adminCourseInclude : courseInclude,
         orderBy: { code: "asc" },
       }),
       db.cohortAnnouncement.findMany({
@@ -111,7 +122,7 @@ portal.post(
     response.status(201).json(
       await db.courseOffering.create({
         data: { id: `course-${randomUUID()}`, ...input },
-        include: courseInclude,
+        include: adminCourseInclude,
       }),
     );
   }),
@@ -391,7 +402,7 @@ portal.patch(
       await db.courseOffering.update({
         where: { id: String(req.params.id) },
         data,
-        include: courseInclude,
+        include: adminCourseInclude,
       }),
     );
   }),

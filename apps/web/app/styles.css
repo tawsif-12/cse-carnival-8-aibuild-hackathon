@@ -4032,6 +4032,279 @@ section h2,
   color: #7f8999;
   font-size: 0.58rem;
 }
+.adminCoursePanel {
+  overflow: hidden;
+  border: 1px solid #292e39;
+  border-radius: 16px;
+  background: #11141a;
+}
+.adminCourseToolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #292e39;
+  background: #151922;
+}
+.adminCourseToolbar > label {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  max-width: 430px;
+  color: #818b9c;
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.adminCourseToolbar input {
+  height: 39px;
+  padding: 0 12px;
+  border: 1px solid #343b48;
+  border-radius: 9px;
+  outline: 0;
+  background: #0c0f14;
+  color: #f2f5f9;
+}
+.adminCourseToolbar input:focus {
+  border-color: #347feb;
+  box-shadow: 0 0 0 3px #347feb1d;
+}
+.adminCourseToolbar > div {
+  display: flex;
+  gap: 8px;
+}
+.adminCourseToolbar > div > span {
+  padding: 8px 10px;
+  border: 1px solid #2d3440;
+  border-radius: 9px;
+  background: #0f1218;
+  color: #7f8999;
+  font-size: 0.54rem;
+  white-space: nowrap;
+}
+.adminCourseToolbar > div b {
+  color: #eaf1fb;
+  font-size: 0.72rem;
+}
+.adminCourseList {
+  display: grid;
+}
+.adminCourseRow {
+  border-bottom: 1px solid #252a34;
+}
+.adminCourseRow:last-child {
+  border-bottom: 0;
+}
+.adminCourseSummary {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.25fr) minmax(175px, 0.9fr) minmax(150px, 0.8fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 17px 18px 12px;
+}
+.adminCourseIdentity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.adminCourseIdentity > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #145dc8, #6141d5);
+  color: #fff;
+  font-size: 0.56rem;
+  font-weight: 800;
+}
+.adminCourseIdentity > div,
+.courseTeacher {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.adminCourseIdentity b {
+  font-size: 0.76rem;
+}
+.adminCourseIdentity small,
+.courseTeacher b {
+  overflow: hidden;
+  color: #949dac;
+  font-size: 0.57rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.courseScope {
+  width: fit-content;
+  padding: 7px 9px;
+  border: 1px solid #2e4262;
+  border-radius: 99px;
+  background: #132139;
+  color: #8bb8fb;
+  font-size: 0.52rem;
+  white-space: nowrap;
+}
+.courseTeacher small {
+  color: #697487;
+  font-size: 0.46rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.courseTeacher b {
+  color: #d8dee8;
+}
+.courseCounts {
+  display: flex;
+  gap: 6px;
+}
+.courseCounts span {
+  display: grid;
+  min-width: 58px;
+  color: #778293;
+  font-size: 0.48rem;
+  text-align: center;
+}
+.courseCounts b {
+  color: #e5eaf2;
+  font-size: 0.75rem;
+}
+.adminCourseActions {
+  display: flex;
+  gap: 5px;
+}
+.adminCourseActions button {
+  padding: 7px 9px;
+  border: 1px solid #343b48;
+  border-radius: 7px;
+  background: #1b2029;
+  color: #b9c7da;
+  font-size: 0.53rem;
+}
+.adminCourseActions button:hover {
+  border-color: #4778bd;
+  color: #fff;
+}
+.adminCourseActions button.danger {
+  border-color: #4c2b33;
+  color: #ee828b;
+}
+.adminCourseManage {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1.6fr) auto;
+  align-items: start;
+  gap: 13px;
+  padding: 0 18px 16px 67px;
+}
+.adminCourseManage .courseEnroll {
+  margin: 0;
+}
+.enrolledMembers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.enrolledMembers > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 8px;
+  border: 1px solid #303743;
+  border-radius: 99px;
+  background: #171b22;
+  color: #aeb8c7;
+  font-size: 0.49rem;
+}
+.enrolledMembers small {
+  color: #66748a;
+  text-transform: uppercase;
+}
+.enrolledMembers button {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #292f39;
+  color: #9da8b8;
+}
+.enrolledMembers button:hover {
+  background: #54262d;
+  color: #ff919a;
+}
+.courseMaterials {
+  position: relative;
+  color: #84aff2;
+  font-size: 0.53rem;
+}
+.courseMaterials summary {
+  padding: 8px 9px;
+  border: 1px solid #2f3c50;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.courseMaterials > div {
+  display: grid;
+  gap: 5px;
+  padding: 8px 3px 0;
+}
+.courseMaterials a {
+  color: #91b9f4;
+  text-decoration: none;
+}
+.compactBlank {
+  margin: 18px;
+  min-height: 150px;
+}
+@media (max-width: 1180px) {
+  .adminCourseSummary {
+    grid-template-columns: minmax(210px, 1.2fr) minmax(160px, 0.8fr) minmax(150px, 0.8fr) auto;
+  }
+  .courseCounts {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .adminCourseToolbar,
+  .adminCourseSummary {
+    align-items: stretch;
+    grid-template-columns: 1fr 1fr;
+  }
+  .adminCourseToolbar {
+    display: grid;
+  }
+  .adminCourseToolbar > label {
+    grid-column: 1/-1;
+    max-width: none;
+  }
+  .adminCourseToolbar > div {
+    grid-column: 1/-1;
+  }
+  .adminCourseActions {
+    justify-content: flex-end;
+  }
+  .adminCourseManage {
+    grid-template-columns: 1fr;
+    padding-left: 18px;
+  }
+}
+@media (max-width: 620px) {
+  .adminCourseSummary {
+    grid-template-columns: 1fr;
+  }
+  .adminCourseActions {
+    justify-content: flex-start;
+  }
+  .adminCourseToolbar > div {
+    flex-wrap: wrap;
+  }
+}
 .lectureList {
   display: grid;
   gap: 7px;
