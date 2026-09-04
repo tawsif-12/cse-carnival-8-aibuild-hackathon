@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import OpenAI from "openai";
 import { z } from "zod";
 import { db } from "./db";
 import { asyncRoute, HttpError, parse } from "./http";
@@ -21,7 +20,33 @@ const system=(now:string)=>`You are the CampusOS student assistant for My Studen
 Always use tools for campus facts, even if the conversation contains an earlier result. Never invent or cache campus data. Interpret relative dates from the supplied current time and state the concrete date when discussing an action.
 For next class, read schedules and correctly roll forward across university days. For multi-source questions, call every needed read tool.
 Before book_room, require a specific room, date, start time, end time, and purpose. If any is missing or a request says 'any room' without choosing one, ask a concise clarification and do not book. You may list matching available rooms first.
-Before register_event, identify exactly one event from fresh data. Ask if matching is ambiguous. Never call destructive CRUD actions; explain that deletions must be done in the dashboard. Respect tool errors and clearly report conflicts/capacity failures. Keep answers concise and friendly.`;
+Before register_event, identify exactly one event from fresh data. Ask if matching is ambiguous. Never call destructive CRUD actions; explain that deletions must be done in the dashboard. Respect tool errors and clearly report conflicts/capacity failures. Keep answers concise and friendly. Return plain text without Markdown formatting.`;
+
+type GeminiPart={text?:string;functionCall?:{id?:string;name:string;args?:Record<string,unknown>};functionResponse?:{id?:string;name:string;response:Record<string,unknown>}};
+type GeminiContent={role:"user"|"model";parts:GeminiPart[]};
+type GeminiResponse={candidates?:Array<{content?:GeminiContent}>;error?:{message?:string}};
+
+function geminiSchema(value:any):any{
+ if(Array.isArray(value))return value.map(geminiSchema);
+ if(!value||typeof value!=="object")return value;
+ const result:any={};
+ for(const [key,item] of Object.entries(value)){
+  if(key==="strict"||key==="additionalProperties")continue;
+  if(key==="type"&&Array.isArray(item)){result.type=item.find(x=>x!=="null")??"string";result.nullable=item.includes("null");continue}
+  result[key]=geminiSchema(item);
+ }
+ return result;
+}
+const geminiTools=[{functionDeclarations:tools.map(({type:_type,strict:_strict,...tool})=>geminiSchema(tool))}];
+
+async function generateGemini(contents:GeminiContent[],now:string){
+ const key=process.env.GEMINI_API_KEY;if(!key)throw new HttpError(503,"Set GEMINI_API_KEY in apps/api/.env to enable the agent");
+ const model=process.env.GEMINI_MODEL??"gemini-3.6-flash";
+ const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify({systemInstruction:{parts:[{text:system(now)}]},contents,tools:geminiTools,toolConfig:{functionCallingConfig:{mode:"AUTO"}},generationConfig:{temperature:.2,maxOutputTokens:1200}})});
+ const body=await response.json() as GeminiResponse;
+ if(!response.ok)throw new HttpError(response.status===401||response.status===403?503:502,body.error?.message??`Gemini request failed (${response.status})`);
+ const content=body.candidates?.[0]?.content;if(!content)throw new HttpError(502,"Gemini returned no response");return content;
+}
 
 async function execute(name:string,args:any){
  if(name==="list_schedules")return db.schedule.findMany({where:{day:args.day??undefined,course:args.course?{contains:args.course}:undefined},orderBy:[{day:"asc"},{start_time:"asc"}]});
@@ -38,9 +63,14 @@ async function execute(name:string,args:any){
 }
 
 agent.post("/chat",asyncRoute(async(req,res)=>{
- const input=parse(chatSchema,req.body);if(!process.env.OPENAI_API_KEY)throw new HttpError(503,"Set OPENAI_API_KEY in apps/api/.env to enable the agent");
- const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});const now=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Dhaka",dateStyle:"full",timeStyle:"short"}).format(new Date());
- let response=await client.responses.create({model:process.env.OPENAI_MODEL??"gpt-5-mini",instructions:system(now),tools,input:[...input.history,{role:"user",content:input.message}] as any,tool_choice:"auto"});const used:string[]=[];
- for(let turn=0;turn<8;turn++){const calls=response.output.filter((x:any)=>x.type==="function_call") as any[];if(!calls.length)break;const outputs=[];for(const call of calls){used.push(call.name);try{outputs.push({type:"function_call_output",call_id:call.call_id,output:JSON.stringify(await execute(call.name,JSON.parse(call.arguments)))})}catch(error){outputs.push({type:"function_call_output",call_id:call.call_id,output:JSON.stringify({error:error instanceof Error?error.message:"Tool failed"})})}}response=await client.responses.create({model:process.env.OPENAI_MODEL??"gpt-5-mini",instructions:system(now),tools,previous_response_id:response.id,input:outputs as any,tool_choice:"auto"})}
- res.json({message:response.output_text||"I couldn't complete that request.",tools_used:used});
+ const input=parse(chatSchema,req.body),now=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Dhaka",dateStyle:"full",timeStyle:"short"}).format(new Date());
+ const contents:GeminiContent[]=[...input.history.map(item=>({role:item.role==="assistant"?"model" as const:"user" as const,parts:[{text:item.content}]})),{role:"user",parts:[{text:input.message}]}];
+ const used:string[]=[];let content=await generateGemini(contents,now);
+ for(let turn=0;turn<8;turn++){
+  contents.push(content);const calls=content.parts.filter(part=>part.functionCall).map(part=>part.functionCall!);if(!calls.length)break;
+  const responses:GeminiPart[]=[];
+  for(const call of calls){used.push(call.name);try{responses.push({functionResponse:{id:call.id,name:call.name,response:{result:await execute(call.name,call.args??{})}}})}catch(error){responses.push({functionResponse:{id:call.id,name:call.name,response:{error:error instanceof Error?error.message:"Tool failed"}}})}}
+  contents.push({role:"user",parts:responses});content=await generateGemini(contents,now);
+ }
+ const message=content.parts.map(part=>part.text??"").join("").trim();res.json({message:message||"I couldn't complete that request.",tools_used:[...new Set(used)]});
 }));

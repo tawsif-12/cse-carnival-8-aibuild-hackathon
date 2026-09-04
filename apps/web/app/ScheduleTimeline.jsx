@@ -81,8 +81,6 @@ function parseDateForDay(day) {
   return date;
 }
 
-const emptyClass = { course: "", day: "Monday", start_time: "09:00", end_time: "10:00", room: "", instructor: "" };
-
 export default function ScheduleTimeline() {
   const [schedules, setSchedules] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -90,8 +88,7 @@ export default function ScheduleTimeline() {
   const [floor, setFloor] = useState("all");
   const [mode, setMode] = useState("Day");
   const [filter, setFilter] = useState("");
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState(emptyClass);
+  const [mySchedule, setMySchedule] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [usingMock, setUsingMock] = useState(false);
@@ -114,7 +111,18 @@ export default function ScheduleTimeline() {
     }
   }
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    try { setMySchedule(JSON.parse(window.localStorage.getItem("campusos-my-schedule") || "[]")); } catch { setMySchedule([]); }
+  }, []);
+
+  function toggleMyClass(item) {
+    setMySchedule((current) => {
+      const next = current.some((entry) => entry.id === item.id) ? current.filter((entry) => entry.id !== item.id) : [...current, item];
+      window.localStorage.setItem("campusos-my-schedule", JSON.stringify(next));
+      return next;
+    });
+  }
 
   const allRooms = rooms.length ? rooms : MOCK_ROOMS;
   const floorOptions = [...new Set(allRooms.map((room) => room.floor).filter(Boolean))].sort((a, b) => a - b);
@@ -140,49 +148,17 @@ export default function ScheduleTimeline() {
     setSelectedDay(DAYS[next]);
   }
 
-  function openAdd() {
-    setForm({ ...emptyClass, day: selectedDay, room: visibleRooms[0]?.room_number || "" });
-    setModal("add");
-  }
-
-  function openEdit(item) {
-    setForm({ ...item });
-    setModal(item);
-  }
-
-  async function saveClass(event) {
-    event.preventDefault();
-    const isEdit = modal !== "add";
-    const payload = { ...form, title: form.course, section: form.section || "A" };
-    try {
-      if (usingMock) throw new Error("Connect the API to edit preview data.");
-      await request(isEdit ? `/schedules/${modal.id}` : "/schedules", { method: isEdit ? "PATCH" : "POST", body: JSON.stringify(isEdit ? payload : { ...payload, id: `schedule-${Date.now()}` }) });
-      await loadData();
-      setModal(null);
-    } catch (saveError) { setError(saveError.message); }
-  }
-
-  async function deleteClass(item) {
-    setSchedules((current) => current.filter((entry) => entry.id !== item.id));
-    try {
-      if (usingMock) throw new Error("Connect the API to delete preview data.");
-      await request(`/schedules/${item.id}`, { method: "DELETE" });
-      await loadData();
-    } catch (deleteError) { setError(deleteError.message); await loadData(); }
-  }
-
   return <section className="schedulePage">
     <div className="scheduleToolbar">
-      <div><span className="scheduleEyebrow">UNIVERSITY PLANNER</span><h2>Schedule</h2><p>See every teaching space across campus at a glance.</p></div>
-      <div className="scheduleControls"><div className="segmented">{["Day", "Week", "Month"].map((item) => <button key={item} className={mode === item ? "selected" : ""} onClick={() => setMode(item)}>{item}</button>)}</div><label className="scheduleFloor"><span>Floor</span><select value={floor} onChange={(event) => setFloor(event.target.value)}><option value="all">All floors</option>{floorOptions.map((item) => <option key={item} value={item}>Floor {item}</option>)}</select></label><label className="scheduleFilter">⌕<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Course, instructor, room" /></label><button className="addClass" onClick={openAdd}>+ <span>Add Class</span></button></div>
+      <div><span className="scheduleEyebrow">STUDENT PLANNER</span><h2>Official schedule</h2><p>Browse published classes and build your personal timetable.</p></div>
+      <div className="scheduleControls"><div className="segmented">{["Day", "Week", "Month"].map((item) => <button key={item} className={mode === item ? "selected" : ""} onClick={() => setMode(item)}>{item}</button>)}</div><label className="scheduleFloor"><span>Floor</span><select value={floor} onChange={(event) => setFloor(event.target.value)}><option value="all">All floors</option>{floorOptions.map((item) => <option key={item} value={item}>Floor {item}</option>)}</select></label><label className="scheduleFilter">⌕<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Course, instructor, room" /></label><span className="myScheduleCount">{mySchedule.length} selected</span></div>
     </div>
     {error && <div className="scheduleError">{error}<button onClick={() => setError("")}>×</button></div>}
     <div className="scheduleNavigator"><div className="dayPicker"><button onClick={() => moveDay(-1)} aria-label="Previous day">‹</button><div><span>SELECTED DAY</span><b>{formatDay(parseDateForDay(selectedDay))}</b></div><button onClick={() => moveDay(1)} aria-label="Next day">›</button></div><div className="scheduleMeta"><span>{classCount} {classCount === 1 ? "class" : "classes"}</span><small>{visibleRooms.length} of {allRooms.length} rooms</small>{mode !== "Day" && <small>{mode} view preview</small>}</div></div>
     <div className="timelineCard">
       {loading ? <div className="scheduleLoading">Loading university rooms and classes...</div> : <div className="timelineScroller"><div className="timelineHeader"><div className="roomHeader">ROOMS <small>{visibleRooms.length} of {allRooms.length} spaces</small></div><div className="hours">{HOURS.map((hour) => <span key={hour}>{hour > 12 ? hour - 12 : hour}{hour < 12 ? " AM" : hour === 12 ? " PM" : " PM"}</span>)}</div></div>
-        <div className="timelineBody">{visibleRooms.map((room) => <div className="roomRow" key={room.id}><div className="roomInfo"><b>{room.room_number}</b><small>{room.capacity} seats · {(room.equipment || []).slice(0, 2).join(" · ") || "Flexible room"}</small></div><div className="roomTrack">{HOURS.slice(0, -1).map((hour) => <i key={hour} style={{ left: `${((hour - START_HOUR) / (END_HOUR - START_HOUR)) * 100}%` }} />)}{dayClasses.filter((item) => item.room === room.room_number).map((item, index) => { const position = getTimelinePosition(item.start_time, item.end_time); const palette = colors[item.course] || coursePalette(item.course, index); return <article key={item.id} className={`scheduleBar ${conflicts.has(item.id) ? "conflict" : ""}`} style={{ left: `${position.left}%`, width: `${position.width}%`, background: palette[0], borderLeftColor: palette[1], top: `${conflicts.has(item.id) ? (index % 2) * 39 + 8 : 8}px` }}><div className="barContent"><strong>{item.course}</strong><small>{item.start_time}–{item.end_time}</small><div className="barTags"><span>{item.instructor}</span><span>{item.day}</span></div></div><div className="barActions"><button onClick={() => openEdit(item)}>Edit</button><button onClick={() => deleteClass(item)} aria-label={`Delete ${item.course}`}>×</button></div>{conflicts.has(item.id) && <em className="conflictFlag">Conflict</em>}</article> })}</div></div>)}</div>
+        <div className="timelineBody">{visibleRooms.map((room) => <div className="roomRow" key={room.id}><div className="roomInfo"><b>{room.room_number}</b><small>{room.capacity} seats · {(room.equipment || []).slice(0, 2).join(" · ") || "Flexible room"}</small></div><div className="roomTrack">{HOURS.slice(0, -1).map((hour) => <i key={hour} style={{ left: `${((hour - START_HOUR) / (END_HOUR - START_HOUR)) * 100}%` }} />)}{dayClasses.filter((item) => item.room === room.room_number).map((item, index) => { const position = getTimelinePosition(item.start_time, item.end_time); const palette = colors[item.course] || coursePalette(item.course, index); const selected = mySchedule.some((entry) => entry.id === item.id); return <article key={item.id} className={`scheduleBar ${conflicts.has(item.id) ? "conflict" : ""} ${selected ? "selected" : ""}`} style={{ left: `${position.left}%`, width: `${position.width}%`, background: palette[0], borderLeftColor: palette[1], top: `${conflicts.has(item.id) ? (index % 2) * 39 + 8 : 8}px` }}><div className="barContent"><strong>{item.course}</strong><small>{item.start_time}–{item.end_time}</small><div className="barTags"><span>{item.instructor}</span><span>{item.day}</span></div></div><button className="selectClass" onClick={() => toggleMyClass(item)}>{selected ? "Added" : "+ Add"}</button>{conflicts.has(item.id) && <em className="conflictFlag">Room conflict</em>}</article> })}</div></div>)}</div>
       </div>}
     </div>
-    {modal && <div className="scheduleBackdrop" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}><form className="scheduleModal" onSubmit={saveClass}><div className="scheduleModalHead"><div><span>{modal === "add" ? "NEW CLASS" : "EDIT CLASS"}</span><h3>{modal === "add" ? "Add to the timetable" : "Update class"}</h3></div><button type="button" onClick={() => setModal(null)}>×</button></div><div className="scheduleFormGrid"><label>Course code<input required value={form.course} onChange={(event) => setForm({ ...form, course: event.target.value })} placeholder="CSE 2201" /></label><label>Instructor<input required value={form.instructor} onChange={(event) => setForm({ ...form, instructor: event.target.value })} placeholder="Instructor name" /></label><label>Day<select value={form.day} onChange={(event) => setForm({ ...form, day: event.target.value })}>{DAYS.map((day) => <option key={day}>{day}</option>)}</select></label><label>Room<select required value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })}>{visibleRooms.map((room) => <option key={room.id} value={room.room_number}>{room.room_number}</option>)}</select></label><label>Start time<input required type="time" value={form.start_time} onChange={(event) => setForm({ ...form, start_time: event.target.value })} /></label><label>End time<input required type="time" value={form.end_time} onChange={(event) => setForm({ ...form, end_time: event.target.value })} /></label></div><div className="scheduleModalActions"><button type="button" onClick={() => setModal(null)}>Cancel</button><button className="addClass">{modal === "add" ? "Add class" : "Save changes"}</button></div></form></div>}
   </section>;
 }
