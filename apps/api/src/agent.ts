@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
+import OpenAI from "openai";
 import { z } from "zod";
 import { db } from "./db";
 import { asyncRoute, HttpError, parse } from "./http";
@@ -135,7 +136,7 @@ const tools: any[] = [
     type: "function",
     name: "book_room",
     description:
-      "Book or request an available room. Only teachers, CRs, and admins receive this tool.",
+      "Book one specific room for the logged-in student after exact availability was verified with list_rooms.",
     parameters: {
       type: "object",
       properties: {
@@ -162,12 +163,64 @@ const tools: any[] = [
     },
     strict: true,
   },
-  {type:"function",name:"post_class_announcement",description:"Post a scoped course or class announcement. Available only to teachers, CRs, and admins.",parameters:{type:"object",properties:{title:{type:"string"},body:{type:"string"},priority:{type:"string",enum:["high","medium","low"]},expires:{type:"string"},course_code:{type:["string","null"]},department:{type:["string","null"]},academic_year:{type:["number","null"]},semester:{type:["number","null"]}},required:["title","body","priority","expires","course_code","department","academic_year","semester"],additionalProperties:false},strict:true},
+  {
+    type: "function",
+    name: "cancel_room_booking",
+    description: "Cancel one room booking owned by the logged-in user.",
+    parameters: {
+      type: "object",
+      properties: { booking_id: { type: "string" } },
+      required: ["booking_id"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "list_my_room_bookings",
+    description: "List room bookings owned by the logged-in user, optionally on one date.",
+    parameters: {
+      type: "object",
+      properties: { date: { type: ["string", "null"] } },
+      required: ["date"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "cancel_event_registration",
+    description: "Cancel the logged-in user's registration for one event.",
+    parameters: {
+      type: "object",
+      properties: { event_id: { type: "string" } },
+      required: ["event_id"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "list_my_event_registrations",
+    description: "List event registrations owned by the logged-in user.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {type:"function",name:"post_class_announcement",description:"Post a scoped course or class announcement. Available only to admins.",parameters:{type:"object",properties:{title:{type:"string"},body:{type:"string"},priority:{type:"string",enum:["high","medium","low"]},expires:{type:"string"},course_code:{type:["string","null"]},department:{type:["string","null"]},academic_year:{type:["number","null"]},semester:{type:["number","null"]}},required:["title","body","priority","expires","course_code","department","academic_year","semester"],additionalProperties:false},strict:true},
 ];
 const toolRoles: Record<string, string[]> = {
-  book_room: ["teacher", "cr", "admin"],
-  register_event: ["student", "teacher", "cr", "admin"],
-  post_class_announcement:["teacher","cr","admin"],
+  book_room: ["student"],
+  register_event: ["student"],
+  cancel_room_booking: ["student"],
+  list_my_room_bookings: ["student"],
+  cancel_event_registration: ["student"],
+  list_my_event_registrations: ["student"],
+  post_class_announcement:["admin"],
 };
 const toolsFor = (role: string) =>
   tools.filter((tool) => {
@@ -177,84 +230,62 @@ const toolsFor = (role: string) =>
 const system = (
   now: string,
   user: User,
-) => `You are the CampusOS assistant for ${user.name}, whose role is ${user.role}. Current campus date/time is ${now}; timezone Asia/Dhaka; university days are Sunday-Thursday.
-Always use tools for campus facts, even if the conversation contains an earlier result. Never invent or cache campus data. Interpret relative dates from the supplied current time and state the concrete date when discussing an action.
-For next class, read schedules and correctly roll forward across university days. For multi-source questions, call every needed read tool.
-Respect the logged-in user's department, year, semester, section, course assignments, and tool permissions. If a tool is unavailable, explain that their role cannot perform that action. Respect tool errors and keep answers concise and friendly. Return plain text without Markdown formatting.`;
+) => `You are the CampusOS assistant, a knowledgeable campus concierge for ${user.name} (role: ${user.role}). Current campus date/time is ${now}; timezone Asia/Dhaka; university days are Sunday-Thursday.
 
-type GeminiPart = {
-  text?: string;
-  functionCall?: { id?: string; name: string; args?: Record<string, unknown> };
-  functionResponse?: {
-    id?: string;
-    name: string;
-    response: Record<string, unknown>;
-  };
-};
-type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
-type GeminiResponse = {
-  candidates?: Array<{ content?: GeminiContent }>;
-  error?: { message?: string };
-};
+You have tools to read and act on the university's live data: class schedules, rooms, bookings, events, event registrations, announcements, and assignments. This data changes constantly as students and admins use the dashboard, so you must always check it live.
 
-function geminiSchema(value: any): any {
-  if (Array.isArray(value)) return value.map(geminiSchema);
-  if (!value || typeof value !== "object") return value;
-  const result: any = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (key === "strict" || key === "additionalProperties") continue;
-    if (key === "type" && Array.isArray(item)) {
-      result.type = item.find((x) => x !== "null") ?? "string";
-      result.nullable = item.includes("null");
-      continue;
-    }
-    result[key] = geminiSchema(item);
-  }
-  return result;
-}
-const geminiTools = (role: string) => [
-  {
-    functionDeclarations: toolsFor(role).map(
-      ({ type: _type, strict: _strict, ...tool }) => geminiSchema(tool),
-    ),
-  },
-];
+Follow these rules exactly:
 
-async function generateGemini(
-  contents: GeminiContent[],
-  now: string,
-  user: User,
-) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key)
+1. GROUNDING: Never state a fact about schedules, rooms, events, announcements, or assignments unless you got it from a tool call in this conversation. If you don't know, call the right tool. Do not guess or rely on earlier conversation data that might be outdated.
+
+2. ACTIONS NEED VERIFICATION FIRST: Before booking a room, always call list_rooms to check availability for that exact date and time window. Before registering for an event, call list_events and confirm it has open capacity. Never call a booking or registration tool speculatively.
+
+3. ASK WHEN UNCLEAR: If a request is missing information needed to act, ask ONE short, specific clarifying question. Do not guess defaults or perform an action with assumed values.
+
+4. REFUSE WHAT ISN'T ALLOWED: Only admins can create, edit, or delete schedule entries, rooms, events, announcements, or assignments. Students can only book rooms and register for events for themselves, and can only cancel their own bookings or registrations. If authorization or validation fails, explain plainly why and do not retry or attempt a workaround.
+
+5. COMBINE SOURCES WHEN NEEDED: Call every data source needed for multi-source questions and provide one synthesized answer, not separate raw dumps.
+
+6. STAY CURRENT: Never invent a room number, course code, event name, record, or time that did not come from a tool result.
+
+7. TONE: Answer like a helpful, well-informed senior student. Be direct, brief, and conversational. Lead with the answer and avoid corporate or robotic phrasing.
+
+8. ACTION OUTCOMES: Clearly confirm what succeeded or failed. Never leave an action outcome ambiguous.
+
+Respect the logged-in user's department, year, semester, section, course assignments, and tool permissions. Interpret relative dates from the current time above and state concrete dates for actions. Return plain text without Markdown formatting.`;
+
+let openAI: OpenAI | undefined;
+async function generateResponse(input: any[], now: string, user: User) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key || key === "your_key_here")
     throw new HttpError(
       503,
-      "Set GEMINI_API_KEY in apps/api/.env to enable the agent",
+      "Add a valid OPENAI_API_KEY to apps/api/.env to enable the assistant",
     );
-  const model = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system(now, user) }] },
-        contents,
-        tools: geminiTools(user.role),
-        toolConfig: { functionCallingConfig: { mode: "AUTO" } },
-        generationConfig: { temperature: 0.2, maxOutputTokens: 1200 },
-      }),
-    },
-  );
-  const body = (await response.json()) as GeminiResponse;
-  if (!response.ok)
+  openAI ??= new OpenAI({ apiKey: key });
+  try {
+    return await openAI.responses.create({
+      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+      instructions: system(now, user),
+      input,
+      tools: toolsFor(user.role),
+      max_output_tokens: 1200,
+    });
+  } catch (error) {
+    const status =
+      typeof error === "object" && error && "status" in error
+        ? Number(error.status)
+        : undefined;
+    const message = error instanceof Error ? error.message : "AI provider request failed";
     throw new HttpError(
-      response.status === 401 || response.status === 403 ? 503 : 502,
-      body.error?.message ?? `Gemini request failed (${response.status})`,
+      status === 401 || status === 403 || status === 429 ? 503 : 502,
+      status === 401 || status === 403
+        ? "The configured OpenAI API key was rejected"
+        : status === 429
+          ? "The CampusOS assistant is temporarily busy. Please try again shortly"
+          : `The CampusOS assistant could not reach its AI provider: ${message}`,
     );
-  const content = body.candidates?.[0]?.content;
-  if (!content) throw new HttpError(502, "Gemini returned no response");
-  return content;
+  }
 }
 
 async function courseCodes(user: User) {
@@ -264,7 +295,10 @@ async function courseCodes(user: User) {
       ? taughtCourseCodes(user.id)
       : assignedCourseCodes(user.id);
 }
-async function execute(name: string, args: any, user: User) {
+type Verification = { rooms: Set<string>; events: Set<string> };
+const roomVerificationKey = (roomId: string, date: string, start: string, end: string) => `${roomId}|${date}|${start}|${end}`;
+
+async function execute(name: string, args: any, user: User, verified: Verification) {
   if (name === "list_schedules")
     return db.schedule.findMany({
       where: {
@@ -304,13 +338,24 @@ async function execute(name: string, args: any, user: User) {
       .split(",")
       .map((x) => x.trim().toLowerCase())
       .filter(Boolean);
-    return records
+    let result = records
       .map(serializeRoom)
       .filter((r) =>
         wanted.every((w) => r.equipment.some((e) => e.toLowerCase() === w)),
       );
+    if (args.date && args.start_time && args.end_time) {
+      const day = new Date(`${args.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Dhaka" });
+      const scheduled = await db.schedule.findMany({ where: { day, start_time: { lt: args.end_time }, end_time: { gt: args.start_time } }, select: { room: true } });
+      const occupiedRooms = new Set(scheduled.map((entry) => entry.room));
+      result = result.filter((room) => !occupiedRooms.has(room.room_number));
+      for (const room of result) verified.rooms.add(roomVerificationKey(room.id, args.date, args.start_time, args.end_time));
+    }
+    return result;
   }
-  if (name === "book_room")
+  if (name === "book_room") {
+    if (!verified.rooms.has(roomVerificationKey(args.room_id, args.date, args.start_time, args.end_time))) {
+      throw new HttpError(409, "Check this room's availability for the exact date and time before booking it");
+    }
     return db.$transaction(async (tx) => {
       const room = await tx.room.findUnique({ where: { id: args.room_id } });
       if (!room) throw new HttpError(404, "Room not found");
@@ -351,6 +396,7 @@ async function execute(name: string, args: any, user: User) {
         }),
       );
     });
+  }
   if (name === "list_events") {
     const rows = await db.event.findMany({
       where: {
@@ -362,13 +408,18 @@ async function execute(name: string, args: any, user: User) {
       orderBy: [{ date: "asc" }, { start_time: "asc" }],
     });
     const q = String(args.name ?? "").toLowerCase();
-    return rows
+    const result = rows
       .map(serializeEvent)
       .filter(
         (e) => !q || `${e.name} ${e.description}`.toLowerCase().includes(q),
       );
+    for (const event of result) {
+      if (event.registered < event.capacity && !["full", "cancelled", "completed"].includes(event.status)) verified.events.add(event.id);
+    }
+    return result;
   }
-  if (name === "register_event")
+  if (name === "register_event") {
+    if (!verified.events.has(args.event_id)) throw new HttpError(409, "Check this event's current capacity before registering");
     return db.$transaction(async (tx) => {
       const event = await tx.event.findUnique({
         where: { id: args.event_id },
@@ -398,6 +449,39 @@ async function execute(name: string, args: any, user: User) {
         }),
       );
     });
+  }
+  if (name === "list_my_room_bookings") {
+    return db.booking.findMany({
+      where: { user_id: user.id, date: args.date ?? undefined },
+      select: { booking_id: true, room_id: true, date: true, start_time: true, end_time: true, purpose: true, status: true },
+      orderBy: [{ date: "asc" }, { start_time: "asc" }],
+    });
+  }
+  if (name === "cancel_room_booking") {
+    const booking = await db.booking.findUnique({ where: { booking_id: args.booking_id } });
+    if (!booking) throw new HttpError(404, "Room booking not found");
+    if (booking.user_id !== user.id) throw new HttpError(403, "You can cancel only your own room booking");
+    await db.booking.delete({ where: { booking_id: booking.booking_id } });
+    return { cancelled: true, booking_id: booking.booking_id, room_id: booking.room_id, date: booking.date, start_time: booking.start_time, end_time: booking.end_time };
+  }
+  if (name === "list_my_event_registrations") {
+    return db.registration.findMany({
+      where: { student_id: user.id },
+      select: { event: { select: { id: true, name: true, date: true, start_time: true, end_time: true, venue: true, status: true } } },
+      orderBy: { event: { date: "asc" } },
+    });
+  }
+  if (name === "cancel_event_registration") {
+    const registration = await db.registration.findUnique({ where: { event_id_student_id: { event_id: args.event_id, student_id: user.id } } });
+    if (!registration) throw new HttpError(404, "You are not registered for that event");
+    return db.$transaction(async (tx) => {
+      await tx.registration.delete({ where: { id: registration.id } });
+      const event = await tx.event.findUniqueOrThrow({ where: { id: args.event_id } });
+      const registered = Math.max(0, event.registered - 1);
+      await tx.event.update({ where: { id: event.id }, data: { registered, status: event.status === "full" ? "upcoming" : event.status } });
+      return { cancelled: true, event_id: event.id, event_name: event.name };
+    });
+  }
   if (name === "list_announcements") {
     const today = new Date().toLocaleDateString("en-CA", {
       timeZone: "Asia/Dhaka",
@@ -475,56 +559,45 @@ agent.post(
         dateStyle: "full",
         timeStyle: "short",
       }).format(new Date());
-    const contents: GeminiContent[] = [
+    const conversation: any[] = [
       ...input.history.map((item) => ({
-        role:
-          item.role === "assistant" ? ("model" as const) : ("user" as const),
-        parts: [{ text: item.content }],
+        role: item.role,
+        content: item.content,
       })),
-      { role: "user", parts: [{ text: input.message }] },
+      { role: "user", content: input.message },
     ];
     const used: string[] = [];
-    let content = await generateGemini(contents, now, user);
+    const verified: Verification = { rooms: new Set(), events: new Set() };
+    let response = await generateResponse(conversation, now, user);
     for (let turn = 0; turn < 8; turn++) {
-      contents.push(content);
-      const calls = content.parts
-        .filter((part) => part.functionCall)
-        .map((part) => part.functionCall!);
+      conversation.push(...response.output);
+      const calls = response.output.filter(
+        (item): item is Extract<(typeof response.output)[number], { type: "function_call" }> =>
+          item.type === "function_call",
+      );
       if (!calls.length) break;
-      const responses: GeminiPart[] = [];
       for (const call of calls) {
         used.push(call.name);
+        let output: Record<string, unknown>;
         try {
           if (!toolsFor(user.role).some((tool) => tool.name === call.name))
             throw new HttpError(403, "This tool is not available to your role");
-          responses.push({
-            functionResponse: {
-              id: call.id,
-              name: call.name,
-              response: {
-                result: await execute(call.name, call.args ?? {}, user),
-              },
-            },
-          });
+          const args = JSON.parse(call.arguments || "{}") as Record<string, unknown>;
+          output = { result: await execute(call.name, args, user, verified) };
         } catch (error) {
-          responses.push({
-            functionResponse: {
-              id: call.id,
-              name: call.name,
-              response: {
-                error: error instanceof Error ? error.message : "Tool failed",
-              },
-            },
-          });
+          output = {
+            error: error instanceof Error ? error.message : "Tool failed",
+          };
         }
+        conversation.push({
+          type: "function_call_output",
+          call_id: call.call_id,
+          output: JSON.stringify(output),
+        });
       }
-      contents.push({ role: "user", parts: responses });
-      content = await generateGemini(contents, now, user);
+      response = await generateResponse(conversation, now, user);
     }
-    const message = content.parts
-      .map((part) => part.text ?? "")
-      .join("")
-      .trim();
+    const message = response.output_text.trim();
     res.json({
       message: message || "I couldn't complete that request.",
       tools_used: [...new Set(used)],

@@ -946,7 +946,7 @@ function Chat({ role }: { role: Role }) {
       {
         role: "assistant",
         content:
-          "Hi! I’m your read-only CampusOS assistant. Ask about classes, rooms, events, announcements, or assignments.",
+          "Hi! I’m your CampusOS assistant. Ask about live campus data, or ask me to book a room or register you for an event.",
       },
     ]),
     [text, setText] = useState(""),
@@ -986,7 +986,7 @@ function Chat({ role }: { role: Role }) {
         <span>✦</span>
         <div>
           <h2>Live campus intelligence</h2>
-          <p>Answers use current campus data. Student access is read-only.</p>
+          <p>Answers and actions use verified, current campus data.</p>
         </div>
         <i>ONLINE</i>
       </div>
