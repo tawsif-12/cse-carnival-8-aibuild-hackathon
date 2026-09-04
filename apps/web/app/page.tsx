@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Announcement, Assignment, Event, Room, Schedule } from "@campus-os/contracts";
-import ScheduleTimeline from "./ScheduleTimeline";
 import { PortalSection, type PortalView } from "./sections";
+import RoleDashboard from "./RoleDashboard";
 
 const API=process.env.NEXT_PUBLIC_API_URL??"http://localhost:4000";
 type Data={schedules:Schedule[];assignments:Assignment[];events:Event[];announcements:Announcement[];rooms:Room[]};
@@ -28,9 +28,9 @@ export default function Home(){
  <main><header><div><p className="crumb">CampusOS / <b>{view}</b></p><h1>{titles[view][0]}</h1><p>{titles[view][1]}</p></div><div className="context"><span>Today</span><b>{dateLabel}</b><i className={['Friday','Saturday'].includes(day)?'weekend':''}>{['Friday','Saturday'].includes(day)?'Weekend':'Campus day'}</i></div></header>
  {error&&<div className="error"><span>!</span><p><b>Something went wrong</b>{error}</p><button onClick={()=>setError("")}>×</button></div>}{toast&&<div className="toast"><span>✓</span>{toast}</div>}
  {loading?<Loading/>:
-  view==="overview"?<Overview nextClass={dashboard.next_class??undefined} due={dashboard.due_soon} urgent={dashboard.urgent_announcement??undefined} upcoming={dashboard.upcoming_events} navigate={navigate} refresh={refreshOverview} updatedAt={dashboard.updated_at}/>:
-  view==="schedule"?<ScheduleTimeline/>:
-  view==="rooms"?<Rooms rooms={data.rooms} schedules={data.schedules}/>:
+  view==="overview"?<RoleDashboard studentOverview={<Overview nextClass={dashboard.next_class??undefined} due={dashboard.due_soon} urgent={dashboard.urgent_announcement??undefined} upcoming={dashboard.upcoming_events} navigate={navigate} refresh={refreshOverview} updatedAt={dashboard.updated_at}/>}/>:
+  view==="schedule"?<PortalSection view="schedule" notify={setToast}/>:
+  view==="rooms"?<PortalSection view="rooms" notify={setToast}/>:
   view==="announcements"?<Announcements items={notices} total={data.announcements.length} showExpired={showExpired} toggle={()=>setShowExpired(x=>!x)} add={()=>setEditor("new")} edit={setEditor} remove={setDeleting}/>:
   <PortalSection view={view} notify={setToast}/>}
  </main>{editor&&<AnnouncementForm item={editor==="new"?undefined:editor} close={()=>setEditor(null)} save={save}/>} {deleting&&<Confirm item={deleting} close={()=>setDeleting(null)} confirm={remove}/>}</div>

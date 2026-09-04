@@ -9,6 +9,7 @@ import { events } from "./routes/events";
 import { rooms } from "./routes/rooms";
 import { schedules } from "./routes/schedules";
 import { overview } from "./routes/overview";
+import { workspace } from "./routes/workspace";
 import { agent } from "./agent";
 
 const app = express();
@@ -27,6 +28,7 @@ app.get("/health", asyncRoute(async (_request, response) => {
 }));
 app.use("/schedules", schedules);
 app.use("/overview", overview);
+app.use("/workspace", workspace);
 app.use("/rooms", rooms);
 app.use("/events", events);
 app.use("/announcements", announcements);
