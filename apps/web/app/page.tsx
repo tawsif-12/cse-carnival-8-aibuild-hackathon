@@ -515,14 +515,23 @@ function AuthPage({
           email,
           password,
           role,
-          department,
-          academic_year: Number(academicYear),
-          semester: Number(semester),
-          section,
+          ...(mode === "signup" && (role === "student" || role === "cr")
+            ? {
+                department,
+                academic_year: Number(academicYear),
+                semester: Number(semester),
+                section,
+              }
+            : {}),
         }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Authentication failed");
+      if (!response.ok)
+        throw new Error(
+          body.details?.[0]?.message ??
+            body.error ??
+            "Authentication failed",
+        );
       complete(body.user, body.token);
     } catch (reason) {
       setError((reason as Error).message);
@@ -566,11 +575,15 @@ function AuthPage({
                 ? "Sign in to your portal"
                 : "Create your account"}
             </h2>
-            <p>Select the role assigned to you.</p>
+            <p>
+              {mode === "login"
+                ? "Select the role assigned to you."
+                : "Choose the account type you want to create."}
+            </p>
           </div>
           <div className="roleCards">
             {(mode === "signup"
-              ? (["student"] as Role[])
+              ? (["student", "teacher", "cr"] as Role[])
               : (Object.keys(details) as Role[])
             ).map((value) => (
               <button
@@ -700,11 +713,16 @@ function AuthPage({
                   : `Create ${details[role][0]} account`}
             </button>
           </form>
+          {mode === "signup" && (
+            <p className="managedAccountNote">
+              Admin accounts are created securely from the Admin control room.
+            </p>
+          )}
           <p className="authSwitch">
             {mode === "login" ? "New to CampusOS?" : "Already have an account?"}
             <button
               onClick={() => {
-                if(mode === "login") setRole("student");
+                if (mode === "login" && role === "admin") setRole("student");
                 setMode(mode === "login" ? "signup" : "login");
                 setError("");
               }}

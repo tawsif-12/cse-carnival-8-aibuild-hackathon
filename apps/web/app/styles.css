@@ -3883,6 +3883,12 @@ section h2,
   color: #67a6ff;
   font-size: inherit;
 }
+.managedAccountNote {
+  margin: 12px 0 0;
+  color: #7f8999;
+  font-size: 0.56rem;
+  text-align: center;
+}
 .logoutButton {
   margin-left: auto;
   padding: 6px 7px;

@@ -57,7 +57,7 @@ Run `npm run db:seed`, then sign in with any account below. All demo accounts us
 | CR | `cr@campus.local` | CSE, Year 4, Semester 1, Section A |
 | Admin | `admin@campus.local` | University-wide |
 
-Public signup creates student accounts only. Admins create privileged accounts and assign roles/cohorts from the Admin dashboard.
+Public signup creates student, teacher, and CR accounts with role-appropriate fields. Admin accounts are provisioned from the protected Admin dashboard.
 
 ## Role-based access
 
@@ -76,7 +76,7 @@ Public signup creates student accounts only. Admins create privileged accounts a
 | Events | CRUD, `POST /events/:id/register`, `DELETE /events/:id/registrations/:student_id` |
 | Announcements | CRUD with priority and expiry filters |
 | Assignments | CRUD with status and due-window filters |
-| Auth | `POST /auth/login`, student-only `POST /auth/signup`, `GET /auth/me` |
+| Auth | `POST /auth/login`, role-aware `POST /auth/signup`, `GET /auth/me` |
 | RBAC portal | `/portal/dashboard`, admin users/courses/members, teacher lectures, CR announcements |
 | AI | role-scoped `POST /agent/chat` |
 
