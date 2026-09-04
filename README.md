@@ -44,7 +44,7 @@ The application works without an API key except for AI chat, which returns a cle
 
 ## Database behavior
 
-`npm run db:seed` reads all five files in `data/`. Each entity is seeded only when its table is empty; existing records are never overwritten. Bookings and registrations are relational records and are returned in the exact nested API shape.
+`npm run db:seed` reads the starter files in `data/` and upserts a complete, reusable role-based demo. User-created records are preserved; only stable demo records are refreshed. Bookings and registrations are relational records and are returned in the exact nested API shape.
 
 ## Demo accounts
 
@@ -56,6 +56,8 @@ Run `npm run db:seed`, then sign in with any account below. All demo accounts us
 | Teacher | `teacher@campus.local` | Assigned CSE courses |
 | CR | `cr@campus.local` | CSE, Year 4, Semester 1, Section A |
 | Admin | `admin@campus.local` | University-wide |
+
+The seed populates the CSE Year 4, Semester 1, Section A demo with five assigned courses, lecture resources, a weekly routine, current assignments, targeted class notices, university announcements and events, registrations, 50 rooms, and sample room bookings. Dates are refreshed relative to the day the seed runs so the dashboards do not become stale.
 
 Public signup creates student, teacher, and CR accounts with role-appropriate fields. Admin accounts are provisioned from the protected Admin dashboard.
 
