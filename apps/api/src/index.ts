@@ -8,6 +8,7 @@ import { events } from "./routes/events";
 import { rooms } from "./routes/rooms";
 import { schedules } from "./routes/schedules";
 import { agent } from "./agent";
+import { auth } from "./routes/auth";
 
 const app = express();
 const configuredOrigins = process.env.WEB_ORIGIN?.split(",").map((origin) => origin.trim()).filter(Boolean);
@@ -20,6 +21,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.get("/health", (_request, response) => response.json({ status: "ok" }));
+app.use("/auth", auth);
 app.use("/schedules", schedules);
 app.use("/rooms", rooms);
 app.use("/events", events);
