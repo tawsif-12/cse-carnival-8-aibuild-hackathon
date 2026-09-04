@@ -58,6 +58,24 @@ async function main() {
       await tx.assignment.createMany({ data: assignments });
       loaded.assignments = assignments.length;
     }
+    if (await tx.campusUser.count() === 0) {
+      await tx.campusUser.createMany({ data: [
+        { id: "student-1", name: "Nadia Rahman", email: "student@campus.local", role: "student", semester: "Fall 2026" },
+        { id: "teacher-1", name: "Dr. N. Rahman", email: "teacher@campus.local", role: "teacher", semester: null },
+        { id: "cr-1", name: "Tawsif Ahmed", email: "cr@campus.local", role: "cr", semester: "Fall 2026" },
+        { id: "admin-1", name: "Campus Administrator", email: "admin@campus.local", role: "admin", semester: null },
+      ] });
+      await tx.course.createMany({ data: [
+        { id: "course-cse4129", code: "CSE 4129", title: "Formal Languages and Compilers", semester: "Fall 2026", teacher_id: "teacher-1" },
+        { id: "course-cse4113", code: "CSE 4113", title: "Computer Networks", semester: "Fall 2026", teacher_id: "teacher-1" },
+      ] });
+      await tx.enrollment.createMany({ data: [
+        { user_id: "student-1", course_id: "course-cse4129" }, { user_id: "student-1", course_id: "course-cse4113" },
+        { user_id: "cr-1", course_id: "course-cse4129" }, { user_id: "cr-1", course_id: "course-cse4113" },
+      ] });
+      await tx.lecture.create({ data: { id: "lecture-compiler-intro", course_id: "course-cse4129", teacher_id: "teacher-1", title: "Introduction to Compilers", description: "Lecture slides and reading guide", content_url: "https://example.edu/content/compiler-intro.pdf" } });
+      await tx.semesterAnnouncement.create({ data: { id: "semester-welcome", title: "Welcome to Fall 2026", body: "Semester classes and course resources are now available.", semester: "Fall 2026", author_id: "cr-1", author_name: "Tawsif Ahmed", author_role: "cr", priority: "medium", expires: "2026-12-31" } });
+    }
   });
 
   console.log(`Loaded ${loaded.schedules} schedules, ${loaded.rooms} rooms, ${loaded.events} events, ${loaded.announcements} announcements, and ${loaded.assignments} assignments.`);

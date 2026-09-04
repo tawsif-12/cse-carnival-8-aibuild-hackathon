@@ -105,3 +105,70 @@ model Assignment {
   @@index([deadline])
   @@index([course, status])
 }
+
+model CampusUser {
+  id          String       @id
+  name        String
+  email       String       @unique
+  role        String
+  semester    String?
+  courses     Course[]     @relation("CourseTeacher")
+  enrollments Enrollment[]
+  lectures    Lecture[]
+
+  @@index([role])
+  @@index([semester])
+}
+
+model Course {
+  id          String       @id
+  code        String       @unique
+  title       String
+  semester    String
+  teacher_id  String
+  teacher     CampusUser   @relation("CourseTeacher", fields: [teacher_id], references: [id])
+  enrollments Enrollment[]
+  lectures    Lecture[]
+
+  @@index([semester])
+  @@index([teacher_id])
+}
+
+model Enrollment {
+  id        Int        @id @default(autoincrement())
+  user_id   String
+  course_id String
+  user      CampusUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course    Course     @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+}
+
+model Lecture {
+  id          String     @id
+  course_id   String
+  teacher_id  String
+  title       String
+  description String
+  content_url String
+  created_at  DateTime   @default(now())
+  course      Course     @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  teacher     CampusUser @relation(fields: [teacher_id], references: [id])
+
+  @@index([course_id, created_at])
+}
+
+model SemesterAnnouncement {
+  id         String   @id
+  title      String
+  body       String
+  semester   String
+  author_id  String
+  author_name String
+  author_role String
+  priority   String
+  created_at DateTime @default(now())
+  expires    String
+
+  @@index([semester, created_at])
+}
